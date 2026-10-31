@@ -1,8 +1,0 @@
-{
-  "prism_angle": 60,
-  "least_count": 0.0166667,
-  "observations": [
-    {"id":1,"side":"Right","order":1,"spectral_colour":"Green","spectral_line":"Green","wavelength_nm":546.1,"main_scale":30,"vernier":12,"least_count":0.0166667,"final_reading":30.2,"minimum_deviation":38.0,"source":"simulated","verified":false},
-    {"id":2,"side":"Left","order":1,"spectral_colour":"Violet","spectral_line":"Violet","wavelength_nm":404.7,"main_scale":330,"vernier":8,"least_count":0.0166667,"final_reading":330.1333,"minimum_deviation":44.0,"source":"simulated","verified":false}
-  ]
-}

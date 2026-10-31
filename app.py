@@ -1,393 +1,199 @@
-import streamlit as st
-import pandas as pd
-import json
-import hashlib
+import hashlib, json, os
+import numpy as np, pandas as pd, plotly.graph_objects as go, streamlit as st
 from PIL import Image
-import io
+import physics as P
+import simulation
+from gemini_reader import read_scale, DEFAULT_MODEL
 
-from modules.spectrum import MERCURY_LINES
-from modules.calculations import normalize_angle, convert_vernier_reading, refractive_index, dispersive_power
-from modules.observations import add_observation, observations_frame, validate_import_payload
-from modules.image_reader import extract_reading, read_scale_crop
-from modules.gemini_reader import read_spectrometer_scale
-from modules.visualization import refractive_index_plot, deviation_plot, calibration_plot
-from modules.report import csv_bytes, json_bytes, pdf_bytes
-from modules.optics import line_target_angle
-from components.telescope import telescope
-
-st.set_page_config(page_title="Prism Spectrometer Lab", page_icon="🔬", layout="wide")
-if "theme_mode" not in st.session_state:
-    st.session_state.theme_mode="dark"
-
-_theme_css = """
-[data-testid='stAppViewContainer'], [data-testid='stHeader']{background:#F8FAFC!important;color:#0F172A!important}
-[data-testid='stSidebar']{background:#E2E8F0!important;color:#0F172A!important}
-[data-testid='stSidebar'] *{color:#0F172A!important}
-[data-testid='stAppViewContainer'] h1,[data-testid='stAppViewContainer'] h2,[data-testid='stAppViewContainer'] h3,[data-testid='stAppViewContainer'] h4,[data-testid='stAppViewContainer'] p,[data-testid='stAppViewContainer'] li,[data-testid='stAppViewContainer'] label,[data-testid='stAppViewContainer'] span,[data-testid='stAppViewContainer'] caption,[data-testid='stAppViewContainer'] code,[data-testid='stAppViewContainer'] a,[data-testid='stAppViewContainer'] strong{color:#0F172A!important}
-[data-testid='stSidebar'] p,[data-testid='stSidebar'] span,[data-testid='stSidebar'] label,[data-testid='stSidebar'] strong{color:#0F172A!important}
-[data-baseweb='radio'] *{color:#0F172A!important}
-[data-testid='stMarkdownContainer']{color:#0F172A!important}
-[data-testid='stCaptionContainer']{color:#475569!important}
-[data-testid='stMetric']{background:#FFFFFF!important;border-color:#CBD5E1!important;border-radius:12px;padding:10px;color:#0F172A!important}
-[data-testid='stMetricLabel'],[data-testid='stMetricValue'],[data-testid='stMetricDelta']{color:#0F172A!important}
-[data-testid='stButton'] button, button[kind='secondary']{background:#7C3AED!important;color:#FFFFFF!important;border:1px solid #6D28D9!important;border-radius:10px!important;font-weight:700!important}
-[data-baseweb='tab-list']{background:#E2E8F0!important;border-radius:10px;padding:4px}[data-baseweb='tab']{color:#334155!important}[aria-selected='true'][data-baseweb='tab']{background:#FFFFFF!important;color:#6D28D9!important;border-radius:8px}
-[data-testid='stTextInput'] input,[data-testid='stNumberInput'] input,[data-baseweb='select']>div{background:#FFFFFF!important;color:#0F172A!important;border-color:#CBD5E1!important}
-""" if st.session_state.theme_mode == "light" else """
-[data-testid='stAppViewContainer'], [data-testid='stHeader']{background:#0F172A!important;color:#F8FAFC!important}
-[data-testid='stSidebar']{background:#111827!important;color:#F8FAFC!important}
-[data-testid='stSidebar'] *{color:#F8FAFC!important}
-[data-testid='stAppViewContainer'] h1,[data-testid='stAppViewContainer'] h2,[data-testid='stAppViewContainer'] h3,[data-testid='stAppViewContainer'] h4,[data-testid='stAppViewContainer'] p,[data-testid='stAppViewContainer'] li,[data-testid='stAppViewContainer'] label,[data-testid='stAppViewContainer'] span,[data-testid='stAppViewContainer'] caption,[data-testid='stAppViewContainer'] code,[data-testid='stAppViewContainer'] a,[data-testid='stAppViewContainer'] strong{color:#F8FAFC!important}
-[data-testid='stMarkdownContainer']{color:#F8FAFC!important}
-[data-testid='stCaptionContainer']{color:#CBD5E1!important}
-[data-testid='stMetric']{background:#1E293B!important;border-color:#334155!important;border-radius:12px;padding:10px;color:#F8FAFC!important}
-[data-testid='stMetricLabel'],[data-testid='stMetricValue'],[data-testid='stMetricDelta']{color:#F8FAFC!important}
-[data-testid='stButton'] button, button[kind='secondary']{background:#334155!important;color:#F8FAFC!important;border:1px solid #64748B!important;border-radius:10px!important;font-weight:700!important}
-[data-baseweb='tab-list']{background:#1E293B!important;border-radius:10px;padding:4px}[data-baseweb='tab']{color:#CBD5E1!important}[aria-selected='true'][data-baseweb='tab']{background:#334155!important;color:#C4B5FD!important;border-radius:8px}
-[data-baseweb='radio'] *{color:#F8FAFC!important}
-[data-testid='stTextInput'] input,[data-testid='stNumberInput'] input,[data-baseweb='select']>div{background:#1E293B!important;color:#F8FAFC!important;border-color:#475569!important}
-"""
+st.set_page_config(page_title="Prism Lab", page_icon="🔬", layout="wide")
 
 st.markdown("""<style>
-.block-container, [data-testid="stMainBlockContainer"]{max-width:none!important;width:100%!important;padding-left:2rem!important;padding-right:2rem!important}
-[data-testid="stAppViewContainer"]{overflow-x:hidden}
-[data-testid="stMain"]{width:100%!important}
-.metric-card{padding:14px;border:1px solid #334155;border-radius:14px;background:#111827}.stTabs [data-baseweb='tab-list']{gap:8px}
-[data-testid='stSidebarCollapseButton']{display:flex!important;width:42px;height:42px;background:#8B5CF6;border-radius:10px;color:white;z-index:999}
-[data-testid='stSidebar']{min-width:280px}
-@media(max-width:900px){.block-container,[data-testid="stMainBlockContainer"]{padding-left:1rem!important;padding-right:1rem!important}}
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+html,body,[class*="st-"],button,input{font-family:'IBM Plex Sans',sans-serif}
+h1,h2,h3{font-family:'Fraunces',serif!important;letter-spacing:-.01em}
+.block-container{max-width:1200px;padding-top:2rem}
+.spectrum{height:6px;border-radius:3px;margin:.2rem 0 1.4rem;
+ background:linear-gradient(90deg,#8B5CF6,#3B82F6,#06B6D4,#22C55E,#EAB308,#F59E0B,#EF4444)}
+[data-testid=stMetric]{background:#121A2B;border:1px solid #24304A;border-radius:10px;padding:12px 16px}
+[data-testid=stSidebar]{border-right:1px solid #24304A}
+.stButton>button,.stDownloadButton>button{border-radius:8px;font-weight:600}
+.chip{display:inline-block;padding:2px 10px;border-radius:99px;font-size:.8rem;border:1px solid #24304A;color:#A9B4CC}
+[data-testid=stFileUploader] [data-testid=stIconMaterial]{display:none!important}
+[data-testid=stExpander] summary{list-style:none!important}
+[data-testid=stExpander] summary::-webkit-details-marker{display:none!important}
+[data-testid=stExpander] summary [data-testid=stIconMaterial]{display:none!important}
 </style>""", unsafe_allow_html=True)
-st.markdown(f"<style>{_theme_css}</style>", unsafe_allow_html=True)
 
-if "observations" not in st.session_state:
-    st.session_state.observations=[]
-if "telescope_angle" not in st.session_state or st.session_state.get("telescope_default_version") != 2:
-    st.session_state.telescope_angle=180.0
-    st.session_state.telescope_default_version=2
-if "prism_angle" not in st.session_state:
-    st.session_state.prism_angle=60.0
-if "least_count" not in st.session_state:
-    st.session_state.least_count=1/60
-if "scanner_results" not in st.session_state:
-    st.session_state.scanner_results=[]
-if "controls_visible" not in st.session_state:
-    st.session_state.controls_visible=True
-if "mercury_source_origin" not in st.session_state:
-    st.session_state.mercury_source_origin=0.0
+ss = st.session_state
+ss.setdefault("obs", pd.DataFrame(columns=["Line", "Side", "Reading (°)", "Source"]))
+ss.setdefault("direct", None)
+ss.setdefault("prism", 60.0)
+ss.setdefault("scans", {})
 
-state={"observations":st.session_state.observations,"prism_angle":st.session_state.prism_angle,"least_count":st.session_state.least_count}
 
-theme_action = "☀️ Light mode" if st.session_state.theme_mode == "dark" else "🌙 Dark mode"
-if st.sidebar.button(theme_action, use_container_width=True, key="theme_toggle"):
-    st.session_state.theme_mode = "light" if st.session_state.theme_mode == "dark" else "dark"
-    st.rerun()
+def api_key():
+    try:
+        k = st.secrets["GEMINI_API_KEY"]
+    except Exception:
+        k = None
+    return k or os.getenv("GEMINI_API_KEY")
 
-st.sidebar.title("🔬 Prism Lab")
-page=st.sidebar.radio("Navigate",["Experiment Overview","Virtual Spectrometer","Image Reading Scanner","Observation Table","Calculations and Results","Graphs and Analysis","Lab Report and Export","Theory and Viva Questions"])
 
-if page=="Experiment Overview":
-    st.title("Determination of Refractive Index and Dispersive Power of a Prism")
-    c1,c2,c3=st.columns(3)
-    c1.metric("Prism angle",f"{st.session_state.prism_angle:.1f}°")
-    c2.metric("Observations",len(st.session_state.observations))
-    c3.metric("Verified",sum(1 for x in st.session_state.observations if x.get("verified")))
-    tabs=st.tabs(["Aim & Apparatus","Theory","Procedure","Safety & Errors"])
-    with tabs[0]:
-        st.markdown("**Aim:** To determine the refractive index and dispersive power of prism material for prominent mercury spectral lines.")
-        st.write("**Apparatus:** Spectrometer, prism, mercury lamp, prism table, collimator, telescope, reading lens and vernier scales.")
-    with tabs[1]:
-        st.latex(r"\mu=\frac{\sin[(A+D_m)/2]}{\sin(A/2)}")
-        st.latex(r"\omega=\frac{\mu_v-\mu_r}{\mu_y-1}")
-        st.info("The Mercury source has been simplified into the seven visible VIBGYOR bands: Violet, Indigo, Blue, Green, Yellow, Orange and Red. No Blue-violet or Yellow companion categories are used.")
-    with tabs[2]:
-        st.markdown("1. Level and calibrate the spectrometer.\n2. Set and measure the prism angle.\n3. Obtain direct and deviated readings on left and right sides.\n4. Locate lines by order, moving the telescope rather than the eye.\n5. Record and verify readings.\n6. Calculate minimum deviation, refractive index and dispersive power.")
-    with tabs[3]:
-        st.write("Avoid touching optical surfaces. Verify zero calibration. Common errors include backlash, parallax, poor collimation, incorrect vernier use, and misidentified orders.")
+def add_obs(line, side, reading, source):
+    row = pd.DataFrame([{"Line": line, "Side": side, "Reading (°)": round(reading, 4), "Source": source}])
+    ss.obs = pd.concat([ss.obs, row], ignore_index=True)
 
-elif page=="Virtual Spectrometer":
-    st.title("Interactive Virtual Spectrometer")
-    left,right=st.columns([1.15,1])
-    with left:
-        st.session_state.prism_angle=st.slider("Prism angle A (°)",30.0,75.0,float(st.session_state.prism_angle),0.5)
-        sensitivity=st.slider("Fine adjustment sensitivity (°)",0.1,5.0,1.0,0.1)
-        angle=telescope(st.session_state.telescope_angle,key="telescope",theme=st.session_state.theme_mode)
-        if angle is not None:
-            st.session_state.telescope_angle=float(angle)
-        c1,c2,c3,c4=st.columns(4)
-        if c1.button("−1°"):
-            st.session_state.telescope_angle=normalize_angle(st.session_state.telescope_angle-sensitivity)
-        if c2.button("+1°"):
-            st.session_state.telescope_angle=normalize_angle(st.session_state.telescope_angle+sensitivity)
-        st.caption("Both Order 1 spectra start at 180°: Right side advances clockwise and Left side counter-clockwise by 4° between colours.")
-    with right:
-        st.subheader("Telescope eyepiece")
-        line_targets=[]
-        source_origin=st.session_state.mercury_source_origin
-        telescope_angle=normalize_angle(st.session_state.telescope_angle)
-        if telescope_angle < 180:
-            active_side="Left"
-        elif telescope_angle > 180:
-            active_side="Right"
-        else:
-            active_side="Origin"
 
-        sectors=[("Right",1,0),("Left",1,0),("Right",2,110),("Left",2,-70)]
-        if active_side == "Origin":
-            line_targets.append((0.0,"Origin",1,MERCURY_LINES[0],180.0))
-        for sector_side,sector_order,dispersion_offset in sectors:
-            if active_side == "Origin" or sector_side != active_side:
-                continue
-            for index,candidate in enumerate(MERCURY_LINES):
-                direction=1 if sector_side=="Right" else -1
-                if sector_order==1:
-                    target=normalize_angle(180+direction*index*4)
-                else:
-                    target=normalize_angle(source_origin+dispersion_offset+direction*index*4)
-                delta=st.session_state.telescope_angle-target
-                if delta > 180: delta -= 360
-                elif delta < -180: delta += 360
-                line_targets.append((abs(delta),sector_side,sector_order,candidate,target))
-        error,side,order,line,target=min(line_targets,key=lambda item:item[0])
-        aligned=error<=max(1.5,0.8*sensitivity)
-        if aligned:
-            eyepiece_color=line["color"]
-            line_text=f"{line['name']} | {line['wavelength']} nm"
-            status=f"{side.upper()} SIDE • ORDER {order}"
-            line_width=12
-        else:
-            side=None; order=None; line=None
-            eyepiece_color="#64748B"
-            line_text="Rotate telescope"
-            status="NO MERCURY LINE IN FIELD"
-            line_width=2
-        st.markdown(f"<div style='height:220px;border-radius:16px;background:radial-gradient(circle,#020617 45%,#111827 46%,#0f172a);display:flex;align-items:center;justify-content:center;color:white;'><div style='text-align:center'><div style='width:{line_width}px;height:150px;background:{eyepiece_color};box-shadow:0 0 28px {eyepiece_color};margin:auto'></div><b>{line_text}</b><br>{status}</div></div>",unsafe_allow_html=True)
-        st.markdown("<div style='margin-top:10px;padding:8px;border-radius:10px;background:#0f172a;color:#cbd5e1;font-size:12px;text-align:center'><b>VIBGYOR Spectrum</b></div>",unsafe_allow_html=True)
-        st.markdown("<div style='height:18px;border-radius:9px;margin-top:6px;background:linear-gradient(90deg,#7C4DFF 0 14%,#4B0082 14% 28%,#2196F3 28% 42%,#00E676 42% 57%,#FFEA00 57% 71%,#FF9800 71% 86%,#F44336 86% 100%)'></div>",unsafe_allow_html=True)
-        st.caption("Violet • Indigo • Blue • Green • Yellow • Orange • Red")
-        st.metric("Current angle",f"{st.session_state.telescope_angle:.1f}°")
-        st.metric("Nearest line angle error",f"{error:.1f}°")
-        if c3.button("Align nearest line"):
-            st.session_state.telescope_angle=target
-        if c4.button("Record observed reading",disabled=not aligned):
-            ms=int(st.session_state.telescope_angle)
-            vc=int(round((st.session_state.telescope_angle-ms)*60/st.session_state.least_count))
-            add_observation(state,{"side":side,"order":order,"spectral_colour":line["name"],"spectral_line":line["name"],"wavelength_nm":line["wavelength"],"main_scale":ms,"vernier":vc,"least_count":st.session_state.least_count,"final_reading":convert_vernier_reading(ms,vc,st.session_state.least_count),"minimum_deviation":None,"source":"simulated","verified":False})
-            st.session_state.observations=state["observations"]
-            st.success("Simulated observation recorded. It remains labelled as simulated until verified.")
+with st.sidebar:
+    st.markdown("### 🔬 Prism Lab")
+    page = st.radio("Go to", ["Overview", "Scan scale (Gemini)", "Readings", "Results", "Simulation", "Export"],
+                    label_visibility="collapsed")
+    st.divider()
+    ss.prism = st.number_input("Prism angle A (°)", 10.0, 90.0, float(ss.prism), 0.1)
+    d = st.number_input("Direct ray reading (°)", 0.0, 360.0, float(ss.direct or 0.0), 0.01, format="%.4f")
+    ss.direct = d if d else ss.direct
 
-elif page=="Image Reading Scanner":
-    st.title("Image Reading Scanner")
-    uploads=st.file_uploader("Upload JPG, JPEG, PNG or WebP",type=["jpg","jpeg","png","webp"],accept_multiple_files=True)
-    if uploads:
-        for upload in uploads:
-            image=Image.open(upload).convert("RGB")
-            upload_id=hashlib.sha256(upload.getvalue()).hexdigest()[:12]
-            st.subheader(upload.name)
-            c1,c2=st.columns(2)
-            with c1: st.image(image,use_container_width=True,caption="Original image")
-            processed=image
-            with c2: st.image(processed,use_container_width=True,caption="Enhanced review area")
-            result=extract_reading(processed,upload.name)
-            st.caption("Reading extracted directly from the uploaded image. Locally detected values can be corrected below.")
-            if result["text"]: st.code(result["text"][:1000])
-            if not result["numbers"]:
-                st.info("No reliable two-value scale reading was detected. Enter the reading manually from the image.")
-            with st.expander("Scale Reading Tool — select and zoom the scale"):
-                st.caption("Drag the area controls to isolate the main scale or vernier, then read the enlarged crop.")
-                left=st.slider("Crop left (%)",0,80,8,key=upload_id+"crop-left")
-                top=st.slider("Crop top (%)",0,80,15,key=upload_id+"crop-top")
-                crop_width=st.slider("Crop width (%)",10,100,50,key=upload_id+"crop-width")
-                crop_height=st.slider("Crop height (%)",10,100,55,key=upload_id+"crop-height")
-                iw,ih=image.size
-                x1=int(iw*left/100)
-                y1=int(ih*top/100)
-                x2=min(iw,int(iw*(left+crop_width)/100))
-                y2=min(ih,int(ih*(top+crop_height)/100))
-                scale_crop=image.crop((x1,y1,x2,y2))
-                zoomed=scale_crop.resize((max(scale_crop.width*3,900),max(scale_crop.height*3,900)),resample=Image.Resampling.LANCZOS)
-                st.image(zoomed,use_container_width=True,caption="Selected scale area enlarged 3x")
-                if st.button("Read with Gemini",key=upload_id+"read-gemini"):
-                    cloud_result=read_spectrometer_scale(scale_crop)
-                    st.session_state[upload_id+"gemini-result"]=cloud_result
-                    if cloud_result["ok"]:
-                        st.success(f"Gemini confidence: {cloud_result['confidence']:.0%}")
-                    else:
-                        st.error(cloud_result["error"])
-                cloud_result=st.session_state.get(upload_id+"gemini-result")
-                if cloud_result and cloud_result["ok"]:
-                    gc1,gc2,gc3=st.columns(3)
-                    if cloud_result["main_scale"] is not None:
-                        gc1.metric("Gemini main scale",f"{cloud_result['main_scale']:.3f}")
-                        if gc1.button("Apply Gemini main scale",key=upload_id+"apply-gemini-main"):
-                            st.session_state[upload_id+"-ms"]=float(cloud_result["main_scale"])
-                            st.rerun()
-                    if cloud_result["vernier"] is not None:
-                        gc2.metric("Gemini vernier",f"{cloud_result['vernier']:.3f}")
-                        if gc2.button("Apply Gemini vernier",key=upload_id+"apply-gemini-vernier"):
-                            st.session_state[upload_id+"-vc"]=float(cloud_result["vernier"])
-                            st.rerun()
-                if st.button("Read selected scale area",key=upload_id+"read-crop"):
-                    crop_result=read_scale_crop(scale_crop,upload.name)
-                    st.session_state[upload_id+"crop-text"]=crop_result["text"]
-                    st.session_state[upload_id+"main-options"]=crop_result["main_candidates"]
-                    st.session_state[upload_id+"vernier-options"]=crop_result["vernier_candidates"]
-                crop_text=st.session_state.get(upload_id+"crop-text","")
-                if crop_text: st.code(crop_text[:1200])
-                main_options=st.session_state.get(upload_id+"main-options",[])
-                vernier_options=st.session_state.get(upload_id+"vernier-options",[])
-                tc1,tc2=st.columns(2)
-                if main_options:
-                    chosen_main=tc1.selectbox("Detected main-scale value",main_options,key=upload_id+"main-choice")
-                    if tc1.button("Apply main scale",key=upload_id+"apply-main"):
-                        st.session_state[upload_id+"-ms"]=float(chosen_main)
-                        st.rerun()
-                if vernier_options:
-                    chosen_vernier=tc2.selectbox("Detected vernier value",vernier_options,key=upload_id+"vernier-choice")
-                    if tc2.button("Apply vernier",key=upload_id+"apply-vernier"):
-                        st.session_state[upload_id+"-vc"]=float(chosen_vernier)
-                        st.rerun()
-            r1,r2,r3,r4,r5=st.columns(5)
-            side=r1.selectbox("Side",["Left","Right"],key=upload.name+"side")
-            order=int(r2.selectbox("Order",[1,2],key=upload.name+"order"))
-            line_name=r3.selectbox("Line",[x["name"] for x in MERCURY_LINES],key=upload.name+"line")
-            ms=r4.number_input("Main scale",value=float(result["main_scale"] or 0),format="%.3f",key=upload_id+"-ms")
-            vc=r5.number_input("Vernier",value=float(result["vernier"] or 0),format="%.3f",key=upload_id+"-vc")
-            confidence=st.progress(result["confidence"],text=f"OCR confidence: {result['confidence']:.0%}")
-            if st.button("Confirm and save reading",key=upload.name+"save"):
-                line=next(x for x in MERCURY_LINES if x["name"]==line_name)
-                add_observation(state,{"side":side,"order":order,"spectral_colour":line_name,"spectral_line":line_name,"wavelength_nm":line["wavelength"],"main_scale":ms,"vernier":vc,"least_count":st.session_state.least_count,"final_reading":convert_vernier_reading(ms,vc,st.session_state.least_count),"minimum_deviation":None,"source":"OCR-extracted","verified":True})
-                st.session_state.observations=state["observations"]
-                st.success("Confirmed reading saved")
+st.title({"Overview": "Prism spectrometer lab", "Scan scale (Gemini)": "Scan a scale photo",
+          "Readings": "Readings", "Results": "Results", "Simulation": "Simulation",
+          "Export": "Export"}[page])
+st.markdown("<div class='spectrum'></div>", unsafe_allow_html=True)
 
-elif page=="Observation Table":
-    st.title("Observation Table")
-    with st.expander("Add a manual observation",expanded=False):
-        m1,m2,m3,m4=st.columns(4)
-        side=m1.selectbox("Side",["Left","Right"])
-        order=int(m2.selectbox("Order",[1,2]))
-        line_name=m3.selectbox("Spectral line",[x["name"] for x in MERCURY_LINES])
-        minimum=m4.number_input("Minimum deviation (°)",0.0,180.0,0.0)
-        n1,n2,n3,n4=st.columns(4)
-        ms=n1.number_input("Main scale",0.0,359.999)
-        vc=n2.number_input("Vernier division",0.0)
-        lc=n3.number_input("Least count",0.000001,1.0,float(st.session_state.least_count),format="%.6f")
-        source=n4.selectbox("Data source",["manually entered","OCR-extracted","simulated","reference"])
-        if st.button("Add observation"):
-            line=next(x for x in MERCURY_LINES if x["name"]==line_name)
-            add_observation(state,{"side":side,"order":order,"spectral_colour":line_name,"spectral_line":line_name,"wavelength_nm":line["wavelength"],"main_scale":ms,"vernier":vc,"least_count":lc,"final_reading":convert_vernier_reading(ms,vc,lc),"minimum_deviation":minimum if minimum>0 else None,"source":source,"verified":False})
-            st.session_state.observations=state["observations"]
-            st.rerun()
-    df=observations_frame(state)
-    st.dataframe(df,use_container_width=True)
-    c1,c2,c3=st.columns(3)
-    delete_id=c1.number_input("Observation ID to delete",min_value=0,step=1)
-    if c2.button("Delete") and delete_id>0:
-        st.session_state.observations=[x for x in st.session_state.observations if x["id"]!=delete_id]
+# ---------------------------------------------------------------- Overview
+if page == "Overview":
+    n = len(ss.obs)
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Prism angle", f"{ss.prism:.1f}°")
+    c2.metric("Direct reading", f"{ss.direct:.3f}°" if ss.direct else "not set")
+    c3.metric("Readings logged", n)
+    st.subheader("How it works")
+    st.markdown("""
+1. Set the prism angle and the direct-ray reading in the sidebar.
+2. Photograph the vernier scale at minimum deviation for each VIBGYOR spectral line.
+3. Upload it under **Scan scale**. Gemini reads the main scale and coinciding vernier line; you check and save.
+4. **Results** computes deviation, refractive index μ and dispersive power ω, and fits a Cauchy curve.
+""")
+    st.latex(r"\mu=\frac{\sin\frac{A+D_m}{2}}{\sin\frac{A}{2}}\qquad \omega=\frac{\mu_{short}-\mu_{long}}{\mu_{mean}-1}")
+    with st.expander("Viva quick answers"):
+        for q, a in [("Why minimum deviation?", "The ray passes symmetrically, so the standard μ formula holds."),
+                     ("Vernier least count?", "One main-scale division divided by the number of vernier divisions."),
+                     ("Why does violet bend more?", "μ rises as wavelength falls (normal dispersion)."),
+                     ("Why a collimator?", "It sends a parallel beam into the prism."),
+                     ("Main sources of error?", "Parallax, backlash, prism not levelled, off-centre prism table.")]:
+            st.markdown(f"**{q}** {a}")
+
+# ---------------------------------------------------------------- Scanner
+elif page == "Scan scale (Gemini)":
+    st.caption(f"Model: {os.getenv('GEMINI_MODEL', DEFAULT_MODEL)}. Photos are sent to Google's Gemini API for reading.")
+    files = st.file_uploader("Upload spectrometer scale photos", type=["jpg", "jpeg", "png", "webp"],
+                             accept_multiple_files=True)
+    for f in files or []:
+        img = Image.open(f)
+        uid = hashlib.sha256(f.getvalue()).hexdigest()[:10]
+        with st.container(border=True):
+            left, right = st.columns([1, 1.2])
+            left.image(img, caption=f.name, use_container_width=True)
+            with right:
+                if st.button("Read with Gemini", key=f"go{uid}", type="primary"):
+                    with st.spinner("Reading scale..."):
+                        ss.scans[uid] = read_scale(img, api_key(), os.getenv("GEMINI_MODEL", DEFAULT_MODEL))
+                res = ss.scans.get(uid)
+                if res and not res["ok"]:
+                    st.error(res["error"])
+                if res and res["ok"]:
+                    st.progress(res["confidence"], text=f"Confidence {res['confidence']:.0%}")
+                    if res["notes"]:
+                        st.caption(res["notes"])
+                    if res["confidence"] < 0.6:
+                        st.warning("Low confidence. Check the values against the photo.")
+                a, b, c = st.columns(3)
+                ms = a.number_input("Main (°)", value=float(res["main"]) if res and res["ok"] else 0.0,
+                                    step=0.5, format="%.2f", key=f"ms{uid}{res and res.get('main')}")
+                vd = b.number_input("Vernier div", value=float(res["vernier"]) if res and res["ok"] else 0.0,
+                                    step=1.0, key=f"vd{uid}{res and res.get('vernier')}")
+                lc = c.number_input("Least count (°)", value=float(res["least_count"]) if res and res["ok"] else 1 / 60,
+                                    format="%.5f", key=f"lc{uid}")
+                total = P.vernier_reading(ms, vd, lc)
+                st.metric("Reading", f"{total:.4f}°")
+                d1, d2, d3 = st.columns([1.2, 1, 1])
+                line = d1.selectbox("Line", P.LINE_NAMES, key=f"ln{uid}")
+                side = d2.selectbox("Side", ["Left", "Right"], key=f"sd{uid}")
+                if d3.button("Save reading", key=f"sv{uid}"):
+                    add_obs(line, side, total, "Gemini (checked)")
+                    st.toast(f"Saved {line} {side}")
+                if st.button("Use as direct reading", key=f"dr{uid}"):
+                    ss.direct = total
+                    st.rerun()
+    if not files:
+        st.info("Upload a close-up of the main scale and vernier. Sharp, evenly lit photos read best.")
+
+# ---------------------------------------------------------------- Readings
+elif page == "Readings":
+    st.subheader("Add a reading by hand")
+    a, b, c, d = st.columns(4)
+    l = a.selectbox("Line", P.LINE_NAMES)
+    s = b.selectbox("Side", ["Left", "Right"])
+    r = c.number_input("Reading (°)", 0.0, 360.0, 0.0, 0.01, format="%.4f")
+    if d.button("Add"):
+        add_obs(l, s, r, "Manual")
         st.rerun()
-    verify_id=c3.number_input("ID to verify",min_value=0,step=1,key="verifyid")
-    if st.button("Mark verified"):
-        for x in st.session_state.observations:
-            if x["id"]==verify_id: x["verified"]=True
-        st.rerun()
-    uploaded=st.file_uploader("Import experiment JSON",type=["json"])
-    if uploaded:
-        try:
-            payload=validate_import_payload(json.load(uploaded)); st.session_state.observations=payload["observations"]
-            st.session_state.prism_angle=float(payload.get("prism_angle",60)); st.success("Experiment imported")
-        except Exception as exc: st.error(str(exc))
-
-elif page=="Calculations and Results":
-    st.title("Calculations and Results")
-    st.session_state.prism_angle=st.number_input("Prism angle A (°)",1.0,179.0,float(st.session_state.prism_angle))
-    st.subheader("Refractive index by wavelength")
-    results=[]
-    for line in MERCURY_LINES:
-        rows=[x for x in st.session_state.observations if x.get("wavelength_nm")==line["wavelength"] and x.get("minimum_deviation") not in (None,0)]
-        if rows:
-            D=sum(float(x["minimum_deviation"] ) for x in rows)/len(rows)
-            try:
-                mu=refractive_index(st.session_state.prism_angle,D)
-                results.append({"line":line["name"],"wavelength_nm":line["wavelength"],"minimum_deviation":D,"refractive_index":mu})
-                st.write(f"**{line['name']} ({line['wavelength']} nm):** μ = {mu:.5f}")
-            except ValueError as exc: st.warning(str(exc))
-        else: st.write(f"**{line['name']} ({line['wavelength']} nm):** Insufficient measurements")
-    st.subheader("Dispersive power")
-    by_w={r["wavelength_nm"]:r["refractive_index"] for r in results}
-    yellow=max((x for x in by_w if 570<=x<=580),key=by_w.get,default=None)
-    violet=max((x for x in by_w if x<440),key=by_w.get,default=None)
-    red=max((x for x in by_w if x>=620),key=by_w.get,default=None)
-    missing=[]
-    if violet: mv=by_w[violet]
-    else: missing.append("violet")
-    if red: mr=by_w[red]
+    if ss.obs.empty:
+        st.info("No readings yet. Scan a photo or add one by hand.")
     else:
-        # Documented fallback: mercury has no red reference line in this data set.
-        mr=None; missing.append("mercury red line")
-    if yellow: my=by_w[yellow]
-    else: missing.append("yellow")
-    if missing:
-        st.warning("Missing observations: "+", ".join(missing)+". Dispersive power not calculated.")
+        ss.obs = st.data_editor(ss.obs, num_rows="dynamic", use_container_width=True, hide_index=True,
+                                column_config={"Line": st.column_config.SelectboxColumn(options=P.LINE_NAMES),
+                                               "Side": st.column_config.SelectboxColumn(options=["Left", "Right"])})
+
+# ---------------------------------------------------------------- Results
+elif page == "Results":
+    if ss.obs.empty or not ss.direct:
+        st.info("Set a direct reading in the sidebar and log at least one reading.")
     else:
-        st.write(f"ω = ({mv:.5f} − {mr:.5f}) / ({my:.5f} − 1) = **{dispersive_power(mv,my,mr):.5f}**")
-    st.session_state.result_rows=results
+        df = ss.obs.dropna().copy()
+        df["D (°)"] = [P.angle_diff(r, ss.direct) for r in df["Reading (°)"]]
+        g = df.groupby("Line")["D (°)"].mean().reset_index()
+        g["λ (nm)"] = g["Line"].map(P.WAVELENGTH)
+        g["μ"] = [P.refractive_index(ss.prism, d) for d in g["D (°)"]]
+        g = g.sort_values("λ (nm)")
+        st.dataframe(g.style.format({"D (°)": "{:.3f}", "μ": "{:.5f}"}), hide_index=True, use_container_width=True)
 
-elif page=="Graphs and Analysis":
-    st.title("Graphs and Analysis")
-    rows=getattr(st.session_state,"result_rows",[])
-    c1,c2=st.columns(2)
-    c1.plotly_chart(refractive_index_plot(rows),use_container_width=True)
-    c2.plotly_chart(deviation_plot(rows),use_container_width=True)
-    st.subheader("Calibration data")
-    calibration=[]
-    raw=st.text_area("Calibration pairs (wavelength_nm, measured_deviation), one per line")
-    for line in raw.splitlines():
-        try:
-            a,b=(float(x.strip()) for x in line.split(",")); calibration.append((a,b))
-        except Exception: pass
-    measured=st.number_input("Unknown measured deviation (°)",0.0,180.0,0.0)
-    if len(calibration)>=2:
-        wavelengths=sorted(calibration)
-        # Simple interpolation of measured value against recorded deviation.
-        xs=sorted([p[1] for p in wavelengths]); ys=sorted([p[0] for p in wavelengths])
-        if  min(xs)<=measured<=max(xs): estimated=float(pd.Series(ys).interpolate().iloc[0]) if False else float(__import__('numpy').interp(measured,xs,ys))
-        else: estimated=None
-        if estimated is not None: st.success(f"Estimated wavelength: {estimated:.1f} nm (interpolation within calibration range)")
-        else: st.warning("Measured value is outside the calibration range; no wavelength estimate shown.")
-        st.plotly_chart(calibration_plot(calibration,[measured,estimated] if estimated else None),use_container_width=True)
-    else: st.info("No calibration data. Reference wavelengths are shown separately and are not independent measured values.")
+        have = list(g["Line"])
+        st.subheader("Dispersive power")
+        c1, c2, c3 = st.columns(3)
+        pick = lambda col, lab, dflt: col.selectbox(lab, have, index=have.index(dflt) if dflt in have else 0)
+        sh = pick(c1, "Short wavelength", "Blue")
+        mn = pick(c2, "Mean wavelength", "Yellow")
+        lg = pick(c3, "Long wavelength", "Red")
+        mu = dict(zip(g["Line"], g["μ"]))
+        if len({sh, mn, lg}) < 3:
+            st.warning("Pick three different lines.")
+        else:
+            w = P.dispersive_power(mu[sh], mu[lg], mu[mn])
+            m1, m2 = st.columns(2)
+            m1.metric("ω", f"{w:.5f}")
+            m2.metric("μ (mean line)", f"{mu[mn]:.5f}")
 
-elif page=="Lab Report and Export":
-    st.title("Lab Report and Export")
-    st.write("The report labels simulated, reference and experimentally measured results separately. Incomplete data remains explicitly missing.")
-    state["prism_angle"]=st.session_state.prism_angle
-    c1,c2,c3=st.columns(3)
-    c1.download_button("Download CSV",csv_bytes(state),"prism_observations.csv","text/csv")
-    c2.download_button("Download JSON",json_bytes(state),"prism_experiment.json","application/json")
-    c3.download_button("Download PDF",pdf_bytes(state),"prism_report.pdf","application/pdf")
+        fig = go.Figure(go.Scatter(x=g["λ (nm)"], y=g["μ"], mode="markers",
+                                   marker=dict(size=11, color=[P.COLOUR[x] for x in g["Line"]]), name="Measured"))
+        fit = P.cauchy_fit(g["λ (nm)"], g["μ"])
+        if fit:
+            xs = np.linspace(400, 650, 60)
+            fig.add_scatter(x=xs, y=fit[0] + fit[1] / xs ** 2, mode="lines", name=f"Cauchy A={fit[0]:.4f}, B={fit[1]:.0f} nm²",
+                            line=dict(color="#94A3B8", dash="dot"))
+        fig.update_layout(template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                          xaxis_title="Wavelength (nm)", yaxis_title="Refractive index μ", height=420)
+        st.plotly_chart(fig, use_container_width=True)
 
+# ---------------------------------------------------------------- Virtual bench
+elif page == "Simulation":
+    simulation.render(ss, add_obs)
+
+# ---------------------------------------------------------------- Export
 else:
-    st.title("Theory and Viva Questions")
-    questions=[
-        ("What is refractive index?","The ratio of the speed of light in vacuum to that in the medium, also n=sin i/sin r."),
-        ("What is dispersive power?","The relative separation of violet and red refractive indices for a representative mean refractive index."),
-        ("What is minimum deviation?","The smallest angular deviation for a given prism and wavelength, occurring at symmetric ray passage."),
-        ("Principle of a spectrometer?","Collimation, dispersion/refraction and telescope observation permit precise angular measurement."),
-        ("Function of the collimator?","Produces a parallel beam from the slit for the prism."),
-        ("Function of the telescope?","Collects and magnifies the emergent rays so spectral lines can be aligned and read."),
-        ("Purpose of the prism table?","Supports and rotates the prism for alignment and measurement."),
-        ("Reflection vs refraction?","Reflection returns light to the incident medium; refraction bends it while crossing media."),
-        ("State Snell's law.","n₁ sin i=n₂ sin r."),
-        ("What is prism angle?","The angle between the two refracting faces."),
-        ("What is angular deviation?","The change in direction between incident and emergent rays."),
-        ("What is vernier least count?","The smallest readable difference between main-scale and vernier divisions."),
-        ("Sources of experimental error?","Parallax, backlash, calibration offset, slit width, prism placement and reading uncertainty."),
-        ("Why mercury lines?","Mercury vapour emits characteristic discrete visible wavelengths rather than a continuous rainbow."),
-        ("How does wavelength relate to refractive index?","Normally refractive index and deviation decrease across the visible spectrum as wavelength increases, with material dispersion."),
-        ("Why do colours deviate differently?","They refract differently because the material refractive index depends on wavelength."),
-        ("Why can reference and experimental wavelengths differ?","Reference data are known line identities; experimental uncertainty, calibration and apparatus conditions affect measured association."),
-        ("Why locate minimum deviation?","A symmetric minimum-deviation geometry allows the standard μ formula to be applied reliably."),
-        ("What are first and second orders?","Angular diffraction/spectral observation groups; this educational prism simulation limits collection to orders 1 and 2."),
-        ("How is the vernier reading converted?","MSR plus coincident vernier division multiplied by least count, with configured calibration offset if used."),
-    ]
-    for i,(q,a) in enumerate(questions,1):
-        with st.expander(f"Q{i}. {q}"): st.write(a)
+    if ss.obs.empty:
+        st.info("Nothing to export yet.")
+    else:
+        st.download_button("Download readings (CSV)", ss.obs.to_csv(index=False), "prism_readings.csv", "text/csv")
+        st.download_button("Download experiment (JSON)",
+                           json.dumps({"prism_angle": ss.prism, "direct": ss.direct,
+                                       "observations": ss.obs.to_dict("records")}, indent=2),
+                           "prism_experiment.json", "application/json")
