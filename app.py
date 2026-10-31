@@ -10,7 +10,24 @@ st.set_page_config(page_title="Prism Lab", page_icon="🔬", layout="wide")
 st.markdown("""<style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
 :root{--line:#263650;--muted:#91A2BC;--text:#EAF1FB}
-html,body,[class*="st-"],button,input{font-family:'DM Sans',sans-serif}
+html,body,button,input{font-family:'DM Sans',sans-serif}
+[data-testid="stApp"],[data-testid="stAppViewContainer"]{font-family:'DM Sans',sans-serif}
+/* Preserve Streamlit Material Symbols ligatures used by sidebar and expander arrows. */
+[data-testid="stIconMaterial"],.material-symbols-rounded,.material-symbols-outlined{
+  font-family:'Material Symbols Rounded'!important;
+  font-weight:normal!important;
+  font-style:normal!important;
+  font-size:24px;
+  line-height:1;
+  letter-spacing:normal;
+  text-transform:none;
+  display:inline-block;
+  white-space:nowrap;
+  word-wrap:normal;
+  direction:ltr;
+  -webkit-font-feature-settings:'liga';
+  -webkit-font-smoothing:antialiased;
+}
 [data-testid="stAppViewContainer"]{background:radial-gradient(ellipse at 80% 0%,rgba(30,64,112,.18),transparent 42%),#080D18;color:var(--text)}
 [data-testid="stHeader"]{background:rgba(8,13,24,.72)}
 [data-testid="stSidebar"]{background:linear-gradient(180deg,#0D1728,#0A1220);border-right:1px solid var(--line)}
