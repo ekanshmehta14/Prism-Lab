@@ -10,6 +10,10 @@ st.set_page_config(page_title="Prism Lab", page_icon="🔬", layout="wide")
 st.markdown("""<style>
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
 html,body,[class*="st-"],button,input{font-family:'IBM Plex Sans',sans-serif}
+[data-testid="stIconMaterial"], [class*="material-icons"] {
+  font-family:'Material Symbols Rounded','Material Icons',sans-serif!important;
+  font-style:normal!important;
+}
 h1,h2,h3{font-family:'Fraunces',serif!important;letter-spacing:-.01em}
 .block-container{max-width:1200px;padding-top:2rem}
 .spectrum{height:6px;border-radius:3px;margin:.2rem 0 1.4rem;
