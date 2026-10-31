@@ -3,7 +3,7 @@ import io
 from PIL import Image
 from pydantic import BaseModel, Field
 
-DEFAULT_MODEL = "gemini-3.8-flash"
+DEFAULT_MODEL = "gemini-3.5-flash"
 
 PROMPT = """You are reading a circular spectrometer scale (main scale plus vernier) from a photo.
 1. main_scale_deg: the main-scale value (decimal degrees) of the last mark at or before the vernier zero.
