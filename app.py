@@ -14,13 +14,50 @@ from modules.visualization import refractive_index_plot, deviation_plot, calibra
 from modules.report import csv_bytes, json_bytes, pdf_bytes
 from modules.optics import line_target_angle
 from components.telescope import telescope
-from ui import inject_theme, brand, hero, eyepiece, spectrum_strip
 
 st.set_page_config(page_title="Prism Spectrometer Lab", page_icon="🔬", layout="wide")
 if "theme_mode" not in st.session_state:
     st.session_state.theme_mode="dark"
 
-inject_theme(st.session_state.theme_mode)
+_theme_css = """
+[data-testid='stAppViewContainer'], [data-testid='stHeader']{background:#F8FAFC!important;color:#0F172A!important}
+[data-testid='stSidebar']{background:#E2E8F0!important;color:#0F172A!important}
+[data-testid='stSidebar'] *{color:#0F172A!important}
+[data-testid='stAppViewContainer'] h1,[data-testid='stAppViewContainer'] h2,[data-testid='stAppViewContainer'] h3,[data-testid='stAppViewContainer'] h4,[data-testid='stAppViewContainer'] p,[data-testid='stAppViewContainer'] li,[data-testid='stAppViewContainer'] label,[data-testid='stAppViewContainer'] span,[data-testid='stAppViewContainer'] caption,[data-testid='stAppViewContainer'] code,[data-testid='stAppViewContainer'] a,[data-testid='stAppViewContainer'] strong{color:#0F172A!important}
+[data-testid='stSidebar'] p,[data-testid='stSidebar'] span,[data-testid='stSidebar'] label,[data-testid='stSidebar'] strong{color:#0F172A!important}
+[data-baseweb='radio'] *{color:#0F172A!important}
+[data-testid='stMarkdownContainer']{color:#0F172A!important}
+[data-testid='stCaptionContainer']{color:#475569!important}
+[data-testid='stMetric']{background:#FFFFFF!important;border-color:#CBD5E1!important;border-radius:12px;padding:10px;color:#0F172A!important}
+[data-testid='stMetricLabel'],[data-testid='stMetricValue'],[data-testid='stMetricDelta']{color:#0F172A!important}
+[data-testid='stButton'] button, button[kind='secondary']{background:#7C3AED!important;color:#FFFFFF!important;border:1px solid #6D28D9!important;border-radius:10px!important;font-weight:700!important}
+[data-baseweb='tab-list']{background:#E2E8F0!important;border-radius:10px;padding:4px}[data-baseweb='tab']{color:#334155!important}[aria-selected='true'][data-baseweb='tab']{background:#FFFFFF!important;color:#6D28D9!important;border-radius:8px}
+[data-testid='stTextInput'] input,[data-testid='stNumberInput'] input,[data-baseweb='select']>div{background:#FFFFFF!important;color:#0F172A!important;border-color:#CBD5E1!important}
+""" if st.session_state.theme_mode == "light" else """
+[data-testid='stAppViewContainer'], [data-testid='stHeader']{background:#0F172A!important;color:#F8FAFC!important}
+[data-testid='stSidebar']{background:#111827!important;color:#F8FAFC!important}
+[data-testid='stSidebar'] *{color:#F8FAFC!important}
+[data-testid='stAppViewContainer'] h1,[data-testid='stAppViewContainer'] h2,[data-testid='stAppViewContainer'] h3,[data-testid='stAppViewContainer'] h4,[data-testid='stAppViewContainer'] p,[data-testid='stAppViewContainer'] li,[data-testid='stAppViewContainer'] label,[data-testid='stAppViewContainer'] span,[data-testid='stAppViewContainer'] caption,[data-testid='stAppViewContainer'] code,[data-testid='stAppViewContainer'] a,[data-testid='stAppViewContainer'] strong{color:#F8FAFC!important}
+[data-testid='stMarkdownContainer']{color:#F8FAFC!important}
+[data-testid='stCaptionContainer']{color:#CBD5E1!important}
+[data-testid='stMetric']{background:#1E293B!important;border-color:#334155!important;border-radius:12px;padding:10px;color:#F8FAFC!important}
+[data-testid='stMetricLabel'],[data-testid='stMetricValue'],[data-testid='stMetricDelta']{color:#F8FAFC!important}
+[data-testid='stButton'] button, button[kind='secondary']{background:#334155!important;color:#F8FAFC!important;border:1px solid #64748B!important;border-radius:10px!important;font-weight:700!important}
+[data-baseweb='tab-list']{background:#1E293B!important;border-radius:10px;padding:4px}[data-baseweb='tab']{color:#CBD5E1!important}[aria-selected='true'][data-baseweb='tab']{background:#334155!important;color:#C4B5FD!important;border-radius:8px}
+[data-baseweb='radio'] *{color:#F8FAFC!important}
+[data-testid='stTextInput'] input,[data-testid='stNumberInput'] input,[data-baseweb='select']>div{background:#1E293B!important;color:#F8FAFC!important;border-color:#475569!important}
+"""
+
+st.markdown("""<style>
+.block-container, [data-testid="stMainBlockContainer"]{max-width:none!important;width:100%!important;padding-left:2rem!important;padding-right:2rem!important}
+[data-testid="stAppViewContainer"]{overflow-x:hidden}
+[data-testid="stMain"]{width:100%!important}
+.metric-card{padding:14px;border:1px solid #334155;border-radius:14px;background:#111827}.stTabs [data-baseweb='tab-list']{gap:8px}
+[data-testid='stSidebarCollapseButton']{display:flex!important;width:42px;height:42px;background:#8B5CF6;border-radius:10px;color:white;z-index:999}
+[data-testid='stSidebar']{min-width:280px}
+@media(max-width:900px){.block-container,[data-testid="stMainBlockContainer"]{padding-left:1rem!important;padding-right:1rem!important}}
+</style>""", unsafe_allow_html=True)
+st.markdown(f"<style>{_theme_css}</style>", unsafe_allow_html=True)
 
 if "observations" not in st.session_state:
     st.session_state.observations=[]
@@ -45,11 +82,11 @@ if st.sidebar.button(theme_action, use_container_width=True, key="theme_toggle")
     st.session_state.theme_mode = "light" if st.session_state.theme_mode == "dark" else "dark"
     st.rerun()
 
-brand()
+st.sidebar.title("🔬 Prism Lab")
 page=st.sidebar.radio("Navigate",["Experiment Overview","Virtual Spectrometer","Image Reading Scanner","Observation Table","Calculations and Results","Graphs and Analysis","Lab Report and Export","Theory and Viva Questions"])
 
 if page=="Experiment Overview":
-    hero("Refractive Index & Dispersive Power of a Prism","Virtual spectrometer practical: rotate the telescope, locate mercury lines on both sides, record readings from images or by hand, and calculate results.",[("Hg lamp","ref"),("Orders 1 & 2 only","ok"),("Local OCR","ocr"),("Simulated data labelled","sim")])
+    st.title("Determination of Refractive Index and Dispersive Power of a Prism")
     c1,c2,c3=st.columns(3)
     c1.metric("Prism angle",f"{st.session_state.prism_angle:.1f}°")
     c2.metric("Observations",len(st.session_state.observations))
@@ -123,8 +160,10 @@ elif page=="Virtual Spectrometer":
             line_text="Rotate telescope"
             status="NO MERCURY LINE IN FIELD"
             line_width=2
-        eyepiece(eyepiece_color,line_text,status,aligned)
-        spectrum_strip([{'wavelength':x['wavelength'],'color':x['color']} for x in MERCURY_LINES])
+        st.markdown(f"<div style='height:220px;border-radius:16px;background:radial-gradient(circle,#020617 45%,#111827 46%,#0f172a);display:flex;align-items:center;justify-content:center;color:white;'><div style='text-align:center'><div style='width:{line_width}px;height:150px;background:{eyepiece_color};box-shadow:0 0 28px {eyepiece_color};margin:auto'></div><b>{line_text}</b><br>{status}</div></div>",unsafe_allow_html=True)
+        st.markdown("<div style='margin-top:10px;padding:8px;border-radius:10px;background:#0f172a;color:#cbd5e1;font-size:12px;text-align:center'><b>VIBGYOR Spectrum</b></div>",unsafe_allow_html=True)
+        st.markdown("<div style='height:18px;border-radius:9px;margin-top:6px;background:linear-gradient(90deg,#7C4DFF 0 14%,#4B0082 14% 28%,#2196F3 28% 42%,#00E676 42% 57%,#FFEA00 57% 71%,#FF9800 71% 86%,#F44336 86% 100%)'></div>",unsafe_allow_html=True)
+        st.caption("Violet • Indigo • Blue • Green • Yellow • Orange • Red")
         st.metric("Current angle",f"{st.session_state.telescope_angle:.1f}°")
         st.metric("Nearest line angle error",f"{error:.1f}°")
         if c3.button("Align nearest line"):
