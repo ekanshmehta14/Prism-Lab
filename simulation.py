@@ -1,5 +1,6 @@
 """Interactive 360-degree prism-spectrometer simulation."""
 import math
+import random
 from pathlib import Path
 import pandas as pd
 import streamlit as st
@@ -80,9 +81,18 @@ def render(ss, add_obs):
         ss.sim_reading = 180.0
         ss.sim_line = "Green"
         ss.sim_dial_component_value = 180.0
+        ss.sim_left_right_angles = {
+            line: round(random.uniform(48.0, 51.0), 2)
+            for line in P.LINE_NAMES
+        }
         ss.sim_initialized = True
     if ss.sim_line not in P.LINE_NAMES:
         ss.sim_line = "Green"
+    if "sim_left_right_angles" not in ss:
+        ss.sim_left_right_angles = {
+            line: round(random.uniform(48.0, 51.0), 2)
+            for line in P.LINE_NAMES
+        }
 
     dev = deviations(cfg["A"], cfg["mu_v"], cfg["mu_red"])
     direct = st.number_input("Direct-ray dial reading (°)", 0.0, 359.99, float(ss.sim_direct), 0.01)
@@ -104,6 +114,7 @@ def render(ss, add_obs):
     selected_line = st.selectbox("Spectral line to observe", P.LINE_NAMES, index=P.LINE_NAMES.index(ss.sim_line))
     ss.sim_line = selected_line
     line_deviation = dev[selected_line][1]
+    left_right_angle = ss.sim_left_right_angles[selected_line]
 
     st.markdown("---")
     dial_col, eye_col = st.columns([2.0, 1.0])
@@ -112,9 +123,10 @@ def render(ss, add_obs):
     side = "Right" if reading <= 180.0 else "Left"
     ss.sim_side = side
 
-    # In a spectrometer, the two vernier positions on opposite sides of the
-    # direct-ray setting are separated by approximately 180 degrees.
-    expected = (direct - line_deviation) if side == "Right" else (direct + 180.0 - line_deviation)
+    # Place the selected spectrum randomly on opposite sides, with the left
+    # and right targets separated by 48.00-51.00 degrees.
+    half_separation = left_right_angle / 2.0
+    expected = (direct - half_separation) if side == "Right" else (direct + half_separation)
     expected %= 360
     hit = P.angle_diff(reading, expected) <= 0.15
 
@@ -136,9 +148,10 @@ def render(ss, add_obs):
                 ss.sim_dial_component_value = dial_value
                 ss.sim_reading = dial_value
                 st.rerun()
-        angle_metric, side_metric = st.columns(2)
+        angle_metric, side_metric, separation_metric = st.columns(3)
         angle_metric.metric("Dial angle", f"{ss.sim_reading:.2f}°")
         side_metric.metric("Telescope side", side)
+        separation_metric.metric("Left-right separation", f"{left_right_angle:.2f}°")
         st.caption("Rotate the red arm with your mouse or finger.")
     with eye_col:
         eyepiece_offset = ((reading - expected) * 35)
