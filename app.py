@@ -9,61 +9,101 @@ st.set_page_config(page_title="Prism Lab", page_icon="🔬", layout="wide")
 
 st.markdown("""<style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
-:root{--line:#263650;--muted:#91A2BC;--text:#EAF1FB}
-html,body,button,input{font-family:'DM Sans',sans-serif}
-[data-testid="stApp"],[data-testid="stAppViewContainer"]{font-family:'DM Sans',sans-serif}
-/* Preserve Streamlit Material Symbols ligatures used by sidebar and expander arrows. */
-[data-testid="stIconMaterial"],.material-symbols-rounded,.material-symbols-outlined{
-  font-family:'Material Symbols Rounded'!important;
-  font-weight:normal!important;
-  font-style:normal!important;
-  font-size:24px;
-  line-height:1;
-  letter-spacing:normal;
-  text-transform:none;
-  display:inline-block;
-  white-space:nowrap;
-  word-wrap:normal;
-  direction:ltr;
-  -webkit-font-feature-settings:'liga';
-  -webkit-font-smoothing:antialiased;
+:root{
+ --bg:#070B14;--panel:#101A2B;--panel2:#142238;--line:#263B56;
+ --muted:#9AADC6;--text:#ECF4FF;--cyan:#5EEAD4;--blue:#38BDF8;--violet:#A78BFA;
 }
-[data-testid="stAppViewContainer"]{background:radial-gradient(ellipse at 80% 0%,rgba(30,64,112,.18),transparent 42%),#080D18;color:var(--text)}
-[data-testid="stHeader"]{background:rgba(8,13,24,.72)}
-[data-testid="stSidebar"]{background:linear-gradient(180deg,#0D1728,#0A1220);border-right:1px solid var(--line)}
-[data-testid="stSidebar"]>div{padding-top:1.4rem}
-[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3{font-family:'Space Grotesk',sans-serif;color:#F1F7FF}
-.block-container{max-width:1380px;padding-top:2.1rem;padding-bottom:4rem}
-h1,h2,h3{font-family:'Space Grotesk',sans-serif!important;letter-spacing:-.035em!important;color:#F2F7FF}
-h1{font-size:clamp(2rem,4vw,2.8rem)!important;font-weight:700!important}
-p,li{color:#C5D1E2}
+html,body,button,input{font-family:'DM Sans',sans-serif}
+[data-testid="stAppViewContainer"]{
+ background:
+ radial-gradient(ellipse at 78% -5%,rgba(56,189,248,.13),transparent 35%),
+ radial-gradient(ellipse at 8% 18%,rgba(124,58,237,.10),transparent 30%),
+ var(--bg);color:var(--text)
+}
+[data-testid="stHeader"]{background:rgba(7,11,20,.76);backdrop-filter:blur(14px)}
+[data-testid="stSidebar"]{
+ background:linear-gradient(180deg,#0E192B 0%,#091321 100%);
+ border-right:1px solid rgba(94,234,212,.13)
+}
+[data-testid="stSidebar"]>div{padding-top:1.25rem}
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3{
+ font-family:'Space Grotesk',sans-serif;color:#F4F8FF;letter-spacing:-.04em
+}
+.block-container{max-width:1440px;padding-top:2rem;padding-bottom:4rem}
+h1,h2,h3{font-family:'Space Grotesk',sans-serif!important;letter-spacing:-.04em!important;color:#F3F8FF}
+h1{font-size:clamp(2rem,4vw,2.85rem)!important;font-weight:700!important}
+h2{font-size:1.55rem!important} h3{font-size:1.18rem!important}
+p,li{color:#C7D5E7;line-height:1.65}
 [data-testid="stCaptionContainer"]{color:var(--muted)!important}
-.spectrum{height:5px;border-radius:99px;margin:.55rem 0 1.65rem;background:linear-gradient(90deg,#8B5CF6,#6366F1,#3B82F6,#06B6D4,#22C55E,#EAB308,#F97316,#EF4444);box-shadow:0 0 22px rgba(94,234,212,.13)}
-[data-testid=stMetric]{background:linear-gradient(145deg,#142238,#0F1A2C);border:1px solid #2A3B56;border-radius:16px;padding:17px 19px;box-shadow:0 10px 30px rgba(0,0,0,.13)}
-[data-testid=stMetricLabel]{color:#9FB0C8!important;font-weight:600}
+[data-testid="stIconMaterial"],.material-symbols-rounded,.material-symbols-outlined{
+ font-family:'Material Symbols Rounded'!important;font-weight:normal!important;font-style:normal!important;
+ font-size:24px;line-height:1;letter-spacing:normal;text-transform:none;display:inline-block;
+ white-space:nowrap;word-wrap:normal;direction:ltr;-webkit-font-feature-settings:'liga';
+ -webkit-font-smoothing:antialiased
+}
+.spectrum{height:5px;border-radius:99px;margin:.55rem 0 1.65rem;
+ background:linear-gradient(90deg,#8B5CF6,#6366F1,#3B82F6,#06B6D4,#22C55E,#EAB308,#F97316,#EF4444);
+ box-shadow:0 0 26px rgba(94,234,212,.18)}
+[data-testid=stMetric]{
+ background:linear-gradient(145deg,rgba(21,39,62,.96),rgba(13,24,41,.96));
+ border:1px solid rgba(111,151,190,.22);border-radius:18px;padding:18px 20px;
+ box-shadow:0 14px 34px rgba(0,0,0,.16);transition:transform .18s ease,border-color .18s ease
+}
+[data-testid=stMetric]:hover{transform:translateY(-2px);border-color:rgba(94,234,212,.45)}
+[data-testid=stMetricLabel]{color:#AFC0D5!important;font-weight:600}
 [data-testid=stMetricValue]{color:#F4F8FF!important;font-family:'Space Grotesk',sans-serif}
-.stButton>button,.stDownloadButton>button{border-radius:11px;border:1px solid #344965;background:#172740;color:#EAF1FB;font-weight:700;min-height:2.65rem;transition:all .18s ease}
-.stButton>button:hover,.stDownloadButton>button:hover{border-color:#5EEAD4;color:#5EEAD4;background:#1A3048}
-.stButton>button[kind="primary"]{background:linear-gradient(110deg,#0F766E,#0891B2);border:0;color:white}
-[data-testid="stRadio"] label{padding:.45rem .65rem;border-radius:9px}
-[data-testid="stRadio"] label:has(input:checked){background:#18334A;border:1px solid #2B6C75}
-[data-testid="stTextInput"] input,[data-testid="stNumberInput"] input,[data-testid="stSelectbox"] [data-baseweb="select"]>div{background:#0E192A;border-color:#30415B;border-radius:10px;color:#EAF1FB}
-[data-testid="stFileUploader"]{background:#101B2D;border:1px dashed #3A526F;border-radius:14px;padding:.5rem}
-[data-testid="stExpander"]{background:#101B2D;border:1px solid #263650;border-radius:13px}
-[data-testid="stDataFrame"],[data-testid="stTable"]{border:1px solid #263650;border-radius:12px;overflow:hidden}
-[data-testid="stAlert"]{border-radius:12px}
-[data-testid="stVerticalBlockBorderWrapper"]{border-color:#263650!important;border-radius:15px}
-hr{border-color:#263650}
-.chip{display:inline-block;padding:4px 11px;border-radius:99px;font-size:.78rem;border:1px solid #31536A;color:#8FE9DE;background:#102A37}
-.hero-panel{padding:1.5rem 1.7rem;border:1px solid #29435B;border-radius:18px;background:linear-gradient(120deg,rgba(20,54,75,.82),rgba(16,26,43,.96) 65%,rgba(31,39,73,.72));box-shadow:0 18px 50px rgba(0,0,0,.2);margin-bottom:1.1rem}
-.hero-kicker{font-size:.75rem;text-transform:uppercase;letter-spacing:.16em;color:#72DCCF;font-weight:700}
-.hero-title{font-family:'Space Grotesk',sans-serif;font-size:clamp(1.8rem,4vw,2.65rem);line-height:1.1;font-weight:700;color:#F4F8FF;margin:.45rem 0}
-.hero-copy{max-width:720px;color:#B6C6DA;font-size:1rem;line-height:1.65}
-.step-card{height:100%;padding:1rem 1.05rem;border-radius:14px;border:1px solid #263B56;background:linear-gradient(145deg,#142238,#101A2B)}
-.step-number{color:#5EEAD4;font-family:'Space Grotesk',sans-serif;font-size:.78rem;font-weight:700;letter-spacing:.12em}
-.step-title{color:#F0F6FF;font-weight:700;margin:.35rem 0}
-.step-copy{color:#AABBD0;font-size:.9rem;line-height:1.5}
-[data-testid=stFileUploader] [data-testid=stIconMaterial]{display:none!important}
+[data-testid=stMetricDelta]{font-size:.82rem}
+.stButton>button,.stDownloadButton>button{
+ border-radius:12px;border:1px solid #344C69;background:linear-gradient(145deg,#192D47,#122238);
+ color:#EAF3FF;font-weight:700;min-height:2.75rem;transition:all .18s ease
+}
+.stButton>button:hover,.stDownloadButton>button:hover{
+ border-color:var(--cyan);color:var(--cyan);background:#19354B;transform:translateY(-1px)
+}
+.stButton>button[kind="primary"]{
+ background:linear-gradient(110deg,#0F766E,#0891B2);border:0;color:white;
+ box-shadow:0 8px 22px rgba(8,145,178,.18)
+}
+[data-testid="stRadio"] label{padding:.55rem .7rem;border-radius:11px;transition:all .16s ease}
+[data-testid="stRadio"] label:has(input:checked){
+ background:linear-gradient(100deg,rgba(20,184,166,.18),rgba(56,189,248,.12));
+ border:1px solid rgba(94,234,212,.35)
+}
+[data-testid="stTextInput"] input,[data-testid="stNumberInput"] input,
+[data-testid="stSelectbox"] [data-baseweb="select"]>div,
+[data-testid="stMultiSelect"] [data-baseweb="select"]>div{
+ background:#0D192A;border-color:#304761;border-radius:11px;color:#EAF1FB
+}
+[data-testid="stFileUploader"]{background:rgba(16,29,48,.72);border:1px dashed #45617F;border-radius:16px;padding:.65rem}
+[data-testid="stExpander"]{background:rgba(16,27,45,.72);border:1px solid #263B56;border-radius:14px}
+[data-testid="stDataFrame"],[data-testid="stTable"]{border:1px solid #263B56;border-radius:14px;overflow:hidden}
+[data-testid="stAlert"]{border-radius:14px}
+[data-testid="stVerticalBlockBorderWrapper"]{border-color:#2A405C!important;border-radius:17px;background:rgba(15,27,45,.45)}
+hr{border-color:#263B56}
+.chip{display:inline-flex;align-items:center;gap:.35rem;padding:5px 11px;border-radius:99px;
+ font-size:.77rem;font-weight:600;border:1px solid rgba(94,234,212,.28);color:#9AF3E5;background:rgba(16,58,65,.42)}
+.hero-panel{
+ position:relative;overflow:hidden;padding:2rem 2.1rem;border:1px solid rgba(91,151,190,.28);
+ border-radius:24px;background:linear-gradient(115deg,rgba(17,54,76,.94),rgba(13,27,47,.96) 58%,rgba(37,32,77,.86));
+ box-shadow:0 24px 70px rgba(0,0,0,.24);margin-bottom:1.3rem
+}
+.hero-panel:after{content:"";position:absolute;width:290px;height:290px;right:-65px;top:-115px;border-radius:50%;
+ border:1px solid rgba(94,234,212,.18);box-shadow:0 0 0 24px rgba(94,234,212,.025),0 0 0 52px rgba(94,234,212,.02)}
+.hero-kicker{font-size:.74rem;text-transform:uppercase;letter-spacing:.18em;color:#75E8D9;font-weight:700}
+.hero-title{font-family:'Space Grotesk',sans-serif;font-size:clamp(2rem,4.6vw,3.25rem);line-height:1.05;
+ font-weight:700;color:#F6FAFF;margin:.55rem 0}
+.hero-copy{max-width:740px;color:#B9CBE0;font-size:1.02rem;line-height:1.7}
+.step-card{height:100%;padding:1.15rem 1.15rem;border-radius:17px;border:1px solid #2A405C;
+ background:linear-gradient(145deg,rgba(21,39,62,.96),rgba(13,24,41,.96));transition:all .2s ease}
+.step-card:hover{transform:translateY(-3px);border-color:rgba(94,234,212,.48);box-shadow:0 14px 32px rgba(0,0,0,.18)}
+.step-number{color:#5EEAD4;font-family:'Space Grotesk',sans-serif;font-size:.76rem;font-weight:700;letter-spacing:.13em}
+.step-title{color:#F0F6FF;font-weight:700;margin:.42rem 0}
+.step-copy{color:#AFC0D5;font-size:.9rem;line-height:1.55}
+.section-kicker{color:#71DCCC;font-size:.72rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase}
+.sidebar-status{padding:.8rem .9rem;border:1px solid rgba(94,234,212,.22);border-radius:14px;
+ background:linear-gradient(135deg,rgba(16,58,65,.55),rgba(17,35,55,.75));color:#CDEEEA;font-size:.82rem}
+[data-testid=stFileUploader] [data-testid=stIconMaterial]{display:initial!important}
+@media(max-width:760px){.block-container{padding-top:1.2rem}.hero-panel{padding:1.35rem}.hero-panel:after{opacity:.35}}
 </style>""", unsafe_allow_html=True)
 
 ss = st.session_state
@@ -88,71 +128,97 @@ def add_obs(line, side, reading, source):
 
 with st.sidebar:
     st.markdown("### 🔬 Prism Lab")
-    page = st.radio("Go to", ["Overview", "Scan scale (Gemini)", "Readings", "Results", "Simulation", "Export"],
-                    label_visibility="collapsed")
+    st.caption("OPTICS WORKSPACE  ·  v1.0")
+    page = st.radio("Workspace", ["Overview", "Scan scale (Gemini)", "Readings", "Results", "Simulation", "Export"],
+                    key="page_nav", label_visibility="collapsed")
+    st.markdown(
+        f"<div class='sidebar-status'>● Experiment active<br><span style='color:#9FB5C9'>{len(ss.obs)} observation(s) saved</span></div>",
+        unsafe_allow_html=True
+    )
     st.divider()
+    st.markdown("**EXPERIMENT SETUP**")
     ss.prism = st.number_input("Prism angle A (°)", 10.0, 90.0, float(ss.prism), 0.1)
     d = st.number_input("Direct ray reading (°)", 0.0, 360.0, float(ss.direct or 0.0), 0.01, format="%.4f")
     ss.direct = d if d else ss.direct
+    st.caption("Set the reference values before analysing observations.")
+    st.divider()
+    st.markdown("**QUICK STATUS**")
+    st.caption("✓ Prism angle configured")
+    st.caption("✓ Gemini scanner available" if api_key() else "○ Gemini key not configured")
+    st.caption("✓ Direct ray recorded" if ss.direct else "○ Direct ray not recorded")
 
+st.markdown("<div class='section-kicker'>PRISM LAB  /  " + page.upper() + "</div>", unsafe_allow_html=True)
 st.title({"Overview": "Prism spectrometer lab", "Scan scale (Gemini)": "Scan a scale photo",
           "Readings": "Readings", "Results": "Results", "Simulation": "Simulation",
           "Export": "Export"}[page])
 st.markdown("<div class='spectrum'></div>", unsafe_allow_html=True)
 
-page_descriptions = {
-    "Overview": "A guided workspace for your prism spectrometer experiment.",
-    "Scan scale (Gemini)": "Upload a scale image, review the AI-assisted reading, then save it to your experiment.",
-    "Readings": "Review, correct, and add observations from either vernier side.",
-    "Results": "Convert recorded angles into deviation, refractive index, and dispersion results.",
-    "Simulation": "Practise aligning the telescope with the virtual spectrometer.",
-    "Export": "Download your experiment readings for reports and further analysis."
-}
-st.caption(page_descriptions[page])
 # ---------------------------------------------------------------- Overview
 if page == "Overview":
     n = len(ss.obs)
     st.markdown("""
     <section class="hero-panel">
       <div class="hero-kicker">OPTICS • EXPERIMENT WORKSPACE</div>
-      <div class="hero-title">Explore light. Measure precision.</div>
-      <div class="hero-copy">A digital prism spectrometer lab to capture vernier readings, observe dispersion,
-      and calculate the refractive index of a prism — with guided scanning and an interactive virtual bench.</div>
-      <div style="margin-top:1rem"><span class="chip">VIBGYOR spectrum</span>&nbsp; <span class="chip">Gemini-assisted reading</span>&nbsp; <span class="chip">Live calculations</span></div>
+      <div class="hero-title">See the science.<br>Measure the spectrum.</div>
+      <div class="hero-copy">Your interactive prism spectrometer workspace. Capture precise vernier readings,
+      explore wavelength-dependent refraction, and turn observations into clear experimental results.</div>
+      <div style="margin-top:1.1rem;display:flex;gap:.5rem;flex-wrap:wrap">
+        <span class="chip">✦ VIBGYOR spectrum</span><span class="chip">✦ Gemini-assisted scan</span><span class="chip">✦ Live calculations</span>
+      </div>
     </section>
     """, unsafe_allow_html=True)
+
     c1, c2, c3 = st.columns(3)
     c1.metric("Prism angle", f"{ss.prism:.1f}°", help="Configured prism angle A")
     c2.metric("Direct reading", f"{ss.direct:.3f}°" if ss.direct else "Not set", help="Reference reading before inserting the prism")
     c3.metric("Readings logged", n, help="Saved manual, scanned, and simulated readings")
-    st.subheader("Your experiment workflow")
+
+    st.markdown("<div class='section-kicker'>YOUR WORKFLOW</div>", unsafe_allow_html=True)
+    st.subheader("Move from setup to discovery")
     steps = st.columns(4)
     cards = [
-        ("01", "Set up", "Enter the prism angle and record the direct-ray reference in the sidebar."),
-        ("02", "Capture", "Upload a clear vernier-scale photo or enter a reading manually."),
-        ("03", "Measure", "Use the virtual spectrometer to align spectral lines and record observations."),
-        ("04", "Analyse", "Compare deviations, calculate refractive index, and export your data.")
+        ("01", "Configure", "Set the prism angle and direct-ray reference."),
+        ("02", "Capture", "Scan a vernier photo or enter readings manually."),
+        ("03", "Explore", "Align spectral lines on the interactive virtual bench."),
+        ("04", "Analyse", "Compare deviations, calculate μ, and export results.")
     ]
     for col, (num, title, copy) in zip(steps, cards):
         with col:
-            st.markdown(f'<div class="step-card"><div class="step-number">STEP {num}</div><div class="step-title">{title}</div><div class="step-copy">{copy}</div></div>', unsafe_allow_html=True)
-    st.subheader("The physics behind the experiment")
-    formula_col, note_col = st.columns([1.25, 1])
+            st.markdown(f'<div class="step-card"><div class="step-number">PHASE {num}</div><div class="step-title">{title}</div><div class="step-copy">{copy}</div></div>', unsafe_allow_html=True)
+
+    st.markdown("<div style='height:.7rem'></div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-kicker'>QUICK ACTIONS</div>", unsafe_allow_html=True)
+    q1, q2, q3 = st.columns(3)
+    if q1.button("✦  Scan a scale photo", use_container_width=True, type="primary"):
+        ss.page_nav = "Scan scale (Gemini)"
+        st.rerun()
+    if q2.button("＋  Add manual reading", use_container_width=True):
+        ss.page_nav = "Readings"
+        st.rerun()
+    if q3.button("◉  Open virtual bench", use_container_width=True):
+        ss.page_nav = "Simulation"
+        st.rerun()
+
+    st.markdown("<div class='section-kicker'>THE PHYSICS</div>", unsafe_allow_html=True)
+    st.subheader("From minimum deviation to refractive index")
+    formula_col, note_col = st.columns([1.15, 1])
     with formula_col:
-        st.latex(r"\mu=\frac{\sin\left(\frac{A+D_m}{2}\right)}{\sin\left(\frac{A}{2}\right)}")
-        st.latex(r"\omega=\frac{\mu_{short}-\mu_{long}}{\mu_{mean}-1}")
+        with st.container(border=True):
+            st.latex(r"\\mu=\\frac{\\sin\\left(\\frac{A+D_m}{2}\\right)}{\\sin\\left(\\frac{A}{2}\\right)}")
+            st.latex(r"\\omega=\\frac{\\mu_{short}-\\mu_{long}}{\\mu_{mean}-1}")
     with note_col:
-        st.markdown("**Minimum deviation method**")
-        st.caption("At minimum deviation, the light path through the prism is symmetric. Use the measured deviation and prism angle to determine the refractive index.")
-        st.markdown("**Expected observation**")
-        st.caption("For normal dispersion, violet light typically bends more than red light because its refractive index is higher.")
-    with st.expander("Viva quick answers"):
+        with st.container(border=True):
+            st.markdown("**Minimum deviation method**")
+            st.caption("At minimum deviation, the light path through the prism is symmetric. The measured deviation and prism angle reveal the refractive index.")
+            st.markdown("**A colourful result**")
+            st.caption("In normal dispersion, violet light typically bends more than red light because its refractive index is higher.")
+    with st.expander("🎓  Viva quick answers"):
         for q, a in [("Why minimum deviation?", "The ray passes symmetrically, so the standard μ formula holds."),
                      ("Vernier least count?", "One main-scale division divided by the number of vernier divisions."),
                      ("Why does violet bend more?", "μ rises as wavelength falls (normal dispersion)."),
                      ("Why a collimator?", "It sends a parallel beam into the prism."),
                      ("Main sources of error?", "Parallax, backlash, prism not levelled, off-centre prism table.")]:
-            st.markdown(f"**{q}** {a}")
+            st.markdown(f"**{q}**  {a}")
 
 # ---------------------------------------------------------------- Scanner
 elif page == "Scan scale (Gemini)":
