@@ -22,7 +22,7 @@ def deviations(A, mu_violet, mu_red):
 
 def telescope_svg(reading, side, selected_line, line_angle, prism_angle, hit):
     arm_angle = math.radians(reading - 180)
-    color = P.COLOUR[selected_line]
+    color = "#5EEAD4" if selected_line == "UDR" else P.COLOUR[selected_line]
     status = "#22C55E" if hit else "#64748B"
     return f'''
     <svg viewBox="0 0 900 390" width="100%" style="background:#0D1424;border-radius:16px">
@@ -57,7 +57,7 @@ def telescope_svg(reading, side, selected_line, line_angle, prism_angle, hit):
     '''
 
 
-def render(ss, add_obs):
+def render(ss, add_obs, add_simulation_readings=None):
     st.subheader("Virtual spectrometer bench")
     mode = st.radio("Simulation values", ["Example values", "My own values"], horizontal=True)
 
@@ -101,31 +101,50 @@ def render(ss, add_obs):
         ss.sim_dial_component_value = direct
         st.rerun()
 
-    selected_line = st.selectbox("Spectral line to observe", P.LINE_NAMES, index=P.LINE_NAMES.index(ss.sim_line))
+    sim_line_options = ["UDR"] + P.LINE_NAMES
+    selected_line = st.selectbox(
+        "Spectral line / direct ray to observe",
+        sim_line_options,
+        index=sim_line_options.index(ss.sim_line) if ss.sim_line in sim_line_options else 1,
+    )
     ss.sim_line = selected_line
-    line_deviation = dev[selected_line][1]
-
+    line_deviation = 0.0 if selected_line == "UDR" else dev[selected_line][1]
+    selected_color = "#5EEAD4" if selected_line == "UDR" else P.COLOUR[selected_line]
     st.markdown("---")
     dial_col, eye_col = st.columns([2.0, 1.0])
     reading = float(ss.sim_reading)
     ss.sim_reading = reading
     side = "Right" if reading <= 180.0 else "Left"
     ss.sim_side = side
+    v1_reading = (reading + 90.0) % 360
+    v2_reading = (reading - 90.0) % 360
 
-    # In a spectrometer, the two vernier positions on opposite sides of the
-    # direct-ray setting are separated by approximately 180 degrees.
-    expected = (direct - line_deviation) if side == "Right" else (direct + 180.0 - line_deviation)
+    if selected_line == "UDR":
+        expected = direct if side == "Right" else (direct + 180.0)
+    else:
+        expected = (direct - line_deviation) if side == "Right" else (direct + line_deviation)
     expected %= 360
     hit = P.angle_diff(reading, expected) <= 0.15
 
     with dial_col:
+        st.markdown(
+            f"<div style='margin:0 0 .75rem;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem'>"
+            f"<div style='padding:.75rem 1rem;border:2px solid #5EEAD4;border-radius:14px;background:#12323A'>"
+            f"<div style='color:#9AF3E5;font-size:.78rem;font-weight:700'>VERNIER V1</div>"
+            f"<div style='font-size:1.55rem;font-weight:700;color:#FFFFFF'>{v1_reading:.2f}°</div></div>"
+            f"<div style='padding:.75rem 1rem;border:2px solid #38BDF8;border-radius:14px;background:#102A40'>"
+            f"<div style='color:#BAE6FD;font-size:.78rem;font-weight:700'>VERNIER V2</div>"
+            f"<div style='font-size:1.55rem;font-weight:700;color:#FFFFFF'>{v2_reading:.2f}°</div></div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
         ss.setdefault("sim_dial_component_value", reading)
         dial_value = DIAL_COMPONENT(
             reading=reading,
             side=side,
             lineAngle=line_deviation,
             prismAngle=cfg["A"],
-            color=P.COLOUR[selected_line],
+            color=selected_color,
             hit=hit,
             key=f"prism_dial_component_{side.lower()}_{int(round(reading * 100)):08d}",
             default=reading,
@@ -136,9 +155,6 @@ def render(ss, add_obs):
                 ss.sim_dial_component_value = dial_value
                 ss.sim_reading = dial_value
                 st.rerun()
-        angle_metric, side_metric = st.columns(2)
-        angle_metric.metric("Dial angle", f"{ss.sim_reading:.2f}°")
-        side_metric.metric("Telescope side", side)
         st.caption("Rotate the red arm with your mouse or finger.")
     with eye_col:
         eyepiece_offset = ((reading - expected) * 35)
@@ -149,7 +165,7 @@ def render(ss, add_obs):
             f'<line x1="250" y1="10" x2="250" y2="170" stroke="#CBD5E1" stroke-width="1"/>'
             f'<line x1="100" y1="90" x2="400" y2="90" stroke="#CBD5E1" stroke-width="1"/>'
             f'<line x1="{250 + eyepiece_offset:.1f}" y1="20" x2="{250 + eyepiece_offset:.1f}" y2="160" '
-            f'stroke="{P.COLOUR[selected_line]}" stroke-width="6"/>'
+            f'stroke="{selected_color}" stroke-width="6"/>'
             '</svg>',
             unsafe_allow_html=True,
         )
@@ -170,6 +186,15 @@ def render(ss, add_obs):
             ss.sim_dial_ignore_value = reading
             st.rerun()
 
-    if st.button("Record aligned reading", type="primary", disabled=not hit):
-        add_obs(selected_line, side, round(reading, 4), "Simulated telescope")
-        st.toast(f"Recorded {selected_line} on the {side.lower()} side")
+    if st.button("Record both vernier readings", type="primary", disabled=not hit):
+        if add_simulation_readings:
+            add_simulation_readings(
+                selected_line,
+                ss.sim_side,
+                round(v1_reading, 4),
+                round(v2_reading, 4),
+            )
+        else:
+            add_obs(selected_line, ss.sim_side, round(v1_reading, 4), "Simulated telescope", "V1")
+            add_obs(selected_line, ss.sim_side, round(v2_reading, 4), "Simulated telescope", "V2")
+        st.toast(f"Recorded {selected_line} readings for V1 and V2")

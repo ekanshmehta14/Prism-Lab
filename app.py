@@ -29,7 +29,7 @@ html,body,button,input{font-family:'DM Sans',sans-serif}
 [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3{
  font-family:'Space Grotesk',sans-serif;color:#F4F8FF;letter-spacing:-.04em
 }
-.block-container{max-width:1440px;padding-top:2rem;padding-bottom:4rem}
+.block-container{max-width:1440px;padding-top:5rem;padding-bottom:4rem}
 h1,h2,h3{font-family:'Space Grotesk',sans-serif!important;letter-spacing:-.04em!important;color:#F3F8FF}
 h1{font-size:clamp(2rem,4vw,2.85rem)!important;font-weight:700!important}
 h2{font-size:1.55rem!important} h3{font-size:1.18rem!important}
@@ -103,12 +103,16 @@ hr{border-color:#263B56}
 .sidebar-status{padding:.8rem .9rem;border:1px solid rgba(94,234,212,.22);border-radius:14px;
  background:linear-gradient(135deg,rgba(16,58,65,.55),rgba(17,35,55,.75));color:#CDEEEA;font-size:.82rem}
 [data-testid=stFileUploader] [data-testid=stIconMaterial]{display:initial!important}
-@media(max-width:760px){.block-container{padding-top:1.2rem}.hero-panel{padding:1.35rem}.hero-panel:after{opacity:.35}}
+@media(max-width:760px){.block-container{padding-top:4rem}.hero-panel{padding:1.35rem}.hero-panel:after{opacity:.35}}
 </style>""", unsafe_allow_html=True)
 
 ss = st.session_state
-ss.setdefault("obs", pd.DataFrame(columns=["Line", "Side", "Reading (°)", "Source"]))
-ss.setdefault("direct", None)
+READING_COLUMNS = [
+    "S.No", "Line", "Vernier", "Right reading (°)", "Left reading (°)", "Difference (°)",
+    "Deviation (°)", "Source"
+]
+ss.setdefault("obs", pd.DataFrame(columns=READING_COLUMNS))
+ss.setdefault("direct", 180.0)
 ss.setdefault("prism", 60.0)
 ss.setdefault("scans", {})
 
@@ -121,9 +125,213 @@ def api_key():
     return k or os.getenv("GEMINI_API_KEY")
 
 
-def add_obs(line, side, reading, source):
-    row = pd.DataFrame([{"Line": line, "Side": side, "Reading (°)": round(reading, 4), "Source": source}])
-    ss.obs = pd.concat([ss.obs, row], ignore_index=True)
+def collapse_duplicate_vernier_rows():
+    if ss.obs.empty:
+        return
+    collapsed = pd.DataFrame(columns=READING_COLUMNS)
+    for _, row in ss.obs.iterrows():
+        matches = collapsed[
+            (collapsed["Line"].astype(str) == str(row["Line"]))
+            & (collapsed["Vernier"].astype(str) == str(row["Vernier"]))
+        ]
+        if matches.empty:
+            collapsed.loc[len(collapsed)] = row.reindex(READING_COLUMNS).fillna(None)
+        else:
+            idx = matches.index[0]
+            for column in ("Right reading (°)", "Left reading (°)"):
+                if pd.notna(row.get(column)):
+                    collapsed.at[idx, column] = row[column]
+    collapsed["S.No"] = range(1, len(collapsed) + 1)
+    ss.obs = collapsed
+
+
+def update_reading_calculations():
+    if ss.obs.empty:
+        return
+    ss.obs["S.No"] = range(1, len(ss.obs) + 1)
+    for idx, row in ss.obs.iterrows():
+        if str(row["Line"]).upper() == "UDR":
+            ss.obs.at[idx, "Difference (°)"] = None
+            ss.obs.at[idx, "Deviation (°)"] = None
+            continue
+        right_reading = row.get("Right reading (°)")
+        left_reading = row.get("Left reading (°)")
+        if pd.notna(right_reading) and pd.notna(left_reading):
+            difference = P.angle_diff(float(right_reading), float(left_reading))
+            ss.obs.at[idx, "Difference (°)"] = round(difference, 4)
+            ss.obs.at[idx, "Deviation (°)"] = round(difference / 2, 4)
+        else:
+            ss.obs.at[idx, "Difference (°)"] = None
+            ss.obs.at[idx, "Deviation (°)"] = None
+
+
+def normalize_observations():
+    old = ss.obs.copy()
+    if list(old.columns) == READING_COLUMNS:
+        collapse_duplicate_vernier_rows()
+        update_reading_calculations()
+        return
+
+    normalized = pd.DataFrame(columns=READING_COLUMNS)
+    if not old.empty:
+        for i, row in old.iterrows():
+            side = row.get("Side", "")
+            imported_reading = row.get("Reading (°)", row.get("Total (°)", row.get("Right reading (°)")))
+            normalized.loc[len(normalized)] = {
+                "S.No": len(normalized) + 1,
+                "Line": row.get("Line", ""),
+                "Vernier": "V1" if side == "Left" else "V2" if side == "Right" else "",
+                "Right reading (°)": imported_reading if side != "Left" else row.get("Right reading (°)"),
+                "Left reading (°)": imported_reading if side == "Left" else row.get("Left reading (°)"),
+                "Difference (°)": None,
+                "Deviation (°)": None,
+                "Source": row.get("Source", "Imported"),
+            }
+    ss.obs = normalized
+    collapse_duplicate_vernier_rows()
+    update_reading_calculations()
+
+
+def add_obs(line, side, reading, source, vernier=None):
+    normalize_observations()
+    side = str(side).strip()
+    if vernier:
+        vernier_name = vernier
+    else:
+        vernier_name = "V1" if side == "Left" else "V2" if side == "Right" else side
+
+    matches = ss.obs[
+        (ss.obs["Line"].astype(str) == str(line))
+        & (ss.obs["Vernier"].astype(str) == vernier_name)
+    ]
+    column = "Right reading (°)" if side == "Right" else "Left reading (°)" if side == "Left" else None
+    if column is not None and not matches.empty:
+        idx = matches.index[0]
+        ss.obs.at[idx, column] = round(reading, 4)
+        ss.obs.at[idx, "Source"] = source
+    else:
+        row = pd.DataFrame([{
+            "S.No": len(ss.obs) + 1,
+            "Line": line,
+            "Vernier": vernier_name,
+            "Right reading (°)": round(reading, 4) if side == "Right" else None,
+            "Left reading (°)": round(reading, 4) if side == "Left" else None,
+            "Difference (°)": None,
+            "Deviation (°)": None,
+            "Source": source,
+        }])
+        ss.obs = pd.concat([ss.obs, row], ignore_index=True)
+
+    update_reading_calculations()
+
+
+def add_simulation_readings(line, side, v1_reading, v2_reading):
+    normalize_observations()
+    side = str(side).strip()
+    column = "Right reading (°)" if side == "Right" else "Left reading (°)" if side == "Left" else None
+    if column is None:
+        return
+
+    for vernier, reading in (("V1", v1_reading), ("V2", v2_reading)):
+        matches = ss.obs[
+            (ss.obs["Line"].astype(str) == str(line))
+            & (ss.obs["Vernier"].astype(str) == vernier)
+        ]
+        if matches.empty:
+            ss.obs = pd.concat(
+                [ss.obs, pd.DataFrame([{
+                    "S.No": len(ss.obs) + 1,
+                    "Line": line,
+                    "Vernier": vernier,
+                    "Right reading (°)": None,
+                    "Left reading (°)": None,
+                    "Difference (°)": None,
+                    "Deviation (°)": None,
+                    "Source": "Simulated telescope",
+                }])],
+                ignore_index=True,
+            )
+            matches = ss.obs[
+                (ss.obs["Line"].astype(str) == str(line))
+                & (ss.obs["Vernier"].astype(str) == vernier)
+            ]
+
+        ss.obs.at[matches.index[0], column] = round(float(reading), 4)
+        ss.obs.at[matches.index[0], "Source"] = "Simulated telescope"
+
+    collapse_duplicate_vernier_rows()
+    update_reading_calculations()
+
+
+def import_readings_csv(uploaded_file):
+    imported = pd.read_csv(uploaded_file)
+    if imported.empty:
+        raise ValueError("The CSV file is empty.")
+
+    aliases = {
+        "Line": ["Line", "Colour", "Color", "Line / colour"],
+        "Vernier": ["Vernier", "Vernier No", "Vernier number"],
+        "Right reading (°)": ["Right reading (°)", "Right reading", "Right", "Total (°)", "Total"],
+        "Left reading (°)": ["Left reading (°)", "Left reading", "Left", "Reading (°)", "Reading"],
+        "Source": ["Source", "Reading Source"],
+    }
+
+    def find_value(row, column):
+        for alias in aliases[column]:
+            if alias in imported.columns and pd.notna(row.get(alias)):
+                return row[alias]
+        return None
+
+    normalized = pd.DataFrame(columns=READING_COLUMNS)
+    side_aliases = ("Reading side", "Reading Side", "Side")
+    for _, row in imported.iterrows():
+        line = find_value(row, "Line")
+        vernier = find_value(row, "Vernier")
+        if pd.isna(line) or str(line).strip() == "":
+            continue
+
+        line = str(line).strip()
+        vernier_value = str(vernier).strip().upper() if pd.notna(vernier) else ""
+        if vernier_value not in ("V1", "V2"):
+            continue
+
+        right_reading = find_value(row, "Right reading (°)")
+        left_reading = find_value(row, "Left reading (°)")
+        side = next((row[column] for column in side_aliases if column in imported.columns and pd.notna(row[column])), None)
+        reading = row.get("Reading (°)", row.get("Reading", row.get("Total (°)", row.get("Total"))))
+
+        if pd.isna(right_reading) and pd.isna(left_reading) and pd.notna(reading):
+            if str(side).strip().lower() == "left":
+                left_reading = reading
+            else:
+                right_reading = reading
+
+        normalized.loc[len(normalized)] = {
+            "S.No": len(normalized) + 1,
+            "Line": line,
+            "Vernier": vernier_value,
+            "Right reading (°)": pd.to_numeric(pd.Series([right_reading]), errors="coerce").iloc[0] if pd.notna(right_reading) else None,
+            "Left reading (°)": pd.to_numeric(pd.Series([left_reading]), errors="coerce").iloc[0] if pd.notna(left_reading) else None,
+            "Difference (°)": None,
+            "Deviation (°)": None,
+            "Source": "Imported CSV" if pd.isna(find_value(row, "Source")) else str(find_value(row, "Source")),
+        }
+
+    if normalized.empty:
+        raise ValueError("No valid rows found. The CSV must contain Line and Vernier (V1 or V2) columns.")
+
+    return normalized
+
+
+def row_reading(row):
+    for column in ("Right reading (°)", "Left reading (°)"):
+        if column in row.index and pd.notna(row[column]):
+            return float(row[column])
+    return None
+
+
+def navigate_to(target_page):
+    ss.page_nav = target_page
 
 
 with st.sidebar:
@@ -138,7 +346,7 @@ with st.sidebar:
     st.divider()
     st.markdown("**EXPERIMENT SETUP**")
     ss.prism = st.number_input("Prism angle A (°)", 10.0, 90.0, float(ss.prism), 0.1)
-    d = st.number_input("Direct ray reading (°)", 0.0, 360.0, float(ss.direct or 0.0), 0.01, format="%.4f")
+    d = st.number_input("Direct ray reading (°)", 0.0, 360.0, float(ss.direct), 0.01, format="%.4f")
     ss.direct = d if d else ss.direct
     st.caption("Set the reference values before analysing observations.")
     st.divider()
@@ -189,23 +397,20 @@ if page == "Overview":
     st.markdown("<div style='height:.7rem'></div>", unsafe_allow_html=True)
     st.markdown("<div class='section-kicker'>QUICK ACTIONS</div>", unsafe_allow_html=True)
     q1, q2, q3 = st.columns(3)
-    if q1.button("✦  Scan a scale photo", use_container_width=True, type="primary"):
-        ss.page_nav = "Scan scale (Gemini)"
-        st.rerun()
-    if q2.button("＋  Add manual reading", use_container_width=True):
-        ss.page_nav = "Readings"
-        st.rerun()
-    if q3.button("◉  Open virtual bench", use_container_width=True):
-        ss.page_nav = "Simulation"
-        st.rerun()
+    q1.button("✦  Scan a scale photo", use_container_width=True, type="primary",
+              on_click=navigate_to, args=("Scan scale (Gemini)",))
+    q2.button("＋  Add manual reading", use_container_width=True,
+              on_click=navigate_to, args=("Readings",))
+    q3.button("◉  Open virtual bench", use_container_width=True,
+              on_click=navigate_to, args=("Simulation",))
 
     st.markdown("<div class='section-kicker'>THE PHYSICS</div>", unsafe_allow_html=True)
     st.subheader("From minimum deviation to refractive index")
     formula_col, note_col = st.columns([1.15, 1])
     with formula_col:
         with st.container(border=True):
-            st.latex(r"\\mu=\\frac{\\sin\\left(\\frac{A+D_m}{2}\\right)}{\\sin\\left(\\frac{A}{2}\\right)}")
-            st.latex(r"\\omega=\\frac{\\mu_{short}-\\mu_{long}}{\\mu_{mean}-1}")
+            st.latex(r"\mu=\frac{\sin\left(\frac{A+D_m}{2}\right)}{\sin\left(\frac{A}{2}\right)}")
+            st.latex(r"\omega=\frac{\mu_{\mathrm{short}}-\mu_{\mathrm{long}}}{\mu_{\mathrm{mean}}-1}")
     with note_col:
         with st.container(border=True):
             st.markdown("**Minimum deviation method**")
@@ -252,9 +457,9 @@ elif page == "Scan scale (Gemini)":
                 lc = c.number_input("Least count (°)", value=float(res["least_count"]) if res and res["ok"] else 1 / 60,
                                     format="%.5f", key=f"lc{uid}")
                 total = P.vernier_reading(ms, vd, lc)
-                st.metric("Reading", f"{total:.4f}°")
+                st.metric(f"{side} reading", f"{total:.4f}°")
                 d1, d2, d3 = st.columns([1.2, 1, 1])
-                line = d1.selectbox("Line", P.LINE_NAMES, key=f"ln{uid}")
+                line = d1.selectbox("Line / direct ray", ["UDR"] + P.LINE_NAMES, key=f"ln{uid}")
                 side = d2.selectbox("Side", ["Left", "Right"], key=f"sd{uid}")
                 if d3.button("Save reading", key=f"sv{uid}"):
                     add_obs(line, side, total, "Gemini (checked)")
@@ -267,28 +472,126 @@ elif page == "Scan scale (Gemini)":
 
 # ---------------------------------------------------------------- Readings
 elif page == "Readings":
-    st.subheader("Add a reading by hand")
-    a, b, c, d = st.columns(4)
-    l = a.selectbox("Line", P.LINE_NAMES)
-    s = b.selectbox("Side", ["Left", "Right"])
-    r = c.number_input("Reading (°)", 0.0, 360.0, 0.0, 0.01, format="%.4f")
-    if d.button("Add"):
-        add_obs(l, s, r, "Manual")
+    st.subheader("Add observations for both verniers")
+    line_options = ["UDR"] + P.LINE_NAMES
+
+    with st.expander("Import readings from CSV", expanded=False):
+        template = pd.DataFrame([{
+            "S.No": 1,
+            "Line": "Green",
+            "Vernier": "V1",
+            "Right reading (°)": 218.16,
+            "Left reading (°)": 321.83,
+            "Difference (°)": 103.67,
+            "Deviation (°)": 51.835,
+            "Source": "Imported CSV",
+        }])
+        st.download_button(
+            "Download CSV template",
+            template.to_csv(index=False),
+            file_name="prism_lab_readings_template.csv",
+            mime="text/csv",
+        )
+        imported_file = st.file_uploader(
+            "Select readings CSV",
+            type=["csv"],
+            key="readings_csv_import",
+        )
+        import_mode = st.radio(
+            "Import mode",
+            ["Append to existing readings", "Replace existing readings"],
+            horizontal=True,
+            key="readings_import_mode",
+        )
+        if st.button("Import CSV", type="primary", disabled=imported_file is None):
+            try:
+                imported_rows = import_readings_csv(imported_file)
+                if import_mode == "Replace existing readings":
+                    ss.obs = imported_rows.copy()
+                else:
+                    ss.obs = pd.concat([ss.obs, imported_rows], ignore_index=True)
+                collapse_duplicate_vernier_rows()
+                update_reading_calculations()
+                st.success(f"Imported {len(imported_rows)} reading rows successfully.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Could not import CSV: {exc}")
+
+    l = st.selectbox("Line / colour", line_options, key="manual_line")
+    reading_side = st.selectbox("Reading side", ["Right", "Left"], key="manual_reading_side")
+    lc = st.number_input("Least count (°)", 0.00001, 1.0, 1 / 60, 0.00001, format="%.5f",
+                         key="manual_least_count")
+    v1, v2 = st.columns(2)
+    v1_main = v1.number_input("V1 main scale (°)", 0.0, 360.0, 0.0, 0.01,
+                              format="%.4f", key="manual_v1_main")
+    v1_vernier = v1.number_input("V1 vernier division", 0.0, 60.0, 0.0, 1.0,
+                                 format="%.1f", key="manual_v1_vernier")
+    v2_main = v2.number_input("V2 main scale (°)", 0.0, 360.0, 0.0, 0.01,
+                              format="%.4f", key="manual_v2_main")
+    v2_vernier = v2.number_input("V2 vernier division", 0.0, 60.0, 0.0, 1.0,
+                                 format="%.1f", key="manual_v2_vernier")
+
+    if st.button("Add both vernier readings", type="primary"):
+        for vernier, main, vernier_div in (
+            ("V1", v1_main, v1_vernier),
+            ("V2", v2_main, v2_vernier),
+        ):
+            total = P.vernier_reading(main, vernier_div, lc)
+            add_obs(l, reading_side, total, "Manual", vernier)
         st.rerun()
+
     if ss.obs.empty:
         st.info("No readings yet. Scan a photo or add one by hand.")
     else:
         ss.obs = st.data_editor(ss.obs, num_rows="dynamic", use_container_width=True, hide_index=True,
-                                column_config={"Line": st.column_config.SelectboxColumn(options=P.LINE_NAMES),
-                                               "Side": st.column_config.SelectboxColumn(options=["Left", "Right"])})
+                                column_config={
+                                    "Line": st.column_config.SelectboxColumn(options=["UDR"] + P.LINE_NAMES),
+                                    "Vernier": st.column_config.SelectboxColumn(options=["V1", "V2"]),
+                                    "S.No": st.column_config.NumberColumn(disabled=True),
+                                    "Difference (°)": st.column_config.NumberColumn(disabled=True, format="%.4f"),
+                                    "Deviation (°)": st.column_config.NumberColumn(disabled=True, format="%.4f"),
+                                })
+        update_reading_calculations()
 
 # ---------------------------------------------------------------- Results
 elif page == "Results":
-    if ss.obs.empty or not ss.direct:
-        st.info("Set a direct reading in the sidebar and log at least one reading.")
+    normalize_observations()
+    df = ss.obs.dropna(subset=["Line"]).copy()
+    df = df[df.apply(row_reading, axis=1).notna()].copy()
+    udr = df[df["Line"].astype(str).str.upper() == "UDR"]
+    spectral = df[df["Line"].astype(str).str.upper() != "UDR"].copy()
+
+    if spectral.empty:
+        st.info("Log at least one spectral-line reading. UDR readings are shown only in the Readings table and excluded from wavelength calculations.")
+    elif udr.empty and not ss.direct:
+        st.info("Add UDR readings for V1 and V2, or set the direct-ray reading in the sidebar.")
     else:
-        df = ss.obs.dropna().copy()
-        df["D (°)"] = [P.angle_diff(r, ss.direct) for r in df["Reading (°)"]]
+        spectral["D (°)"] = np.nan
+        for idx, row in spectral.iterrows():
+            table_deviation = row.get("Deviation (°)")
+            if pd.notna(table_deviation):
+                spectral.at[idx, "D (°)"] = round(float(table_deviation), 4)
+                continue
+
+            vernier_udr = udr[udr["Vernier"] == row["Vernier"]] if not udr.empty else pd.DataFrame()
+            side_deviations = []
+            if not vernier_udr.empty:
+                direct_row = vernier_udr.iloc[0]
+                for column in ("Right reading (°)", "Left reading (°)"):
+                    if pd.notna(row.get(column)) and pd.notna(direct_row.get(column)):
+                        side_deviations.append(
+                            P.angle_diff(float(row[column]), float(direct_row[column]))
+                        )
+            if not side_deviations and ss.direct:
+                for column in ("Right reading (°)", "Left reading (°)"):
+                    if pd.notna(row.get(column)):
+                        side_deviations.append(
+                            P.angle_diff(float(row[column]), float(ss.direct))
+                        )
+            if side_deviations:
+                spectral.at[idx, "D (°)"] = round(sum(side_deviations) / len(side_deviations), 4)
+
+        df = spectral
         g = df.groupby("Line")["D (°)"].mean().reset_index()
         g["λ (nm)"] = g["Line"].map(P.WAVELENGTH)
         g["μ"] = [P.refractive_index(ss.prism, d) for d in g["D (°)"]]
@@ -324,7 +627,7 @@ elif page == "Results":
 
 # ---------------------------------------------------------------- Virtual bench
 elif page == "Simulation":
-    simulation.render(ss, add_obs)
+    simulation.render(ss, add_obs, add_simulation_readings)
 
 # ---------------------------------------------------------------- Export
 else:
