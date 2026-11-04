@@ -1,79 +1,66 @@
 <!doctype html>
 <html>
-<body style="margin:0;background:#0A0F1C;overflow:hidden;touch-action:none;user-select:none">
-<svg id="dial" viewBox="0 0 900 390" style="width:100%;height:390px;cursor:grab;touch-action:none"></svg>
+<body style="margin:0;background:#11161C;overflow:hidden;touch-action:none;user-select:none">
+<style>#dial:focus-visible{outline:2px solid #D9A441;outline-offset:-4px}</style>
+<svg id="dial" viewBox="0 0 900 390" tabindex="0" role="slider" aria-label="Telescope angle in degrees. Arrow keys turn it by 0.1 degree, Shift for 1 degree."
+ style="width:100%;height:390px;cursor:grab;touch-action:none;font-family:system-ui,-apple-system,'Segoe UI',sans-serif"></svg>
 <script>
-const svg=document.getElementById("dial");
-let reading=180, dragging=false;
+const svg=document.getElementById("dial"),CX=450,CY=245;
+let reading=180,dragging=false;
 
-function send(type, data){
-  window.parent.postMessage({isStreamlitMessage:true,type,...data},"*");
-}
+function send(type,data){window.parent.postMessage({isStreamlitMessage:true,type,...data},"*")}
+
+const TICKS=(()=>{let s="";
+  for(let r=0;r<360;r+=5){
+    const a=(r-180)*Math.PI/180,M=r%30===0,r1=M?108:116,r2=124;
+    s+=`<line x1="${(CX+r1*Math.cos(a)).toFixed(1)}" y1="${(CY+r1*Math.sin(a)).toFixed(1)}" x2="${(CX+r2*Math.cos(a)).toFixed(1)}" y2="${(CY+r2*Math.sin(a)).toFixed(1)}" stroke="${M?"#C8B07A":"#5E6B78"}" stroke-width="${M?2.5:1.2}"/>`;
+    if(M)s+=`<text x="${(CX+92*Math.cos(a)).toFixed(1)}" y="${(CY+92*Math.sin(a)+4).toFixed(1)}" fill="#8C99A5" font-size="12" text-anchor="middle">${r}</text>`;
+  }
+  return s})();
 
 function render(){
-  const args=window.streamlitArgs || {};
-  const cx=450, cy=245;
-  const armAngle=(reading-180)*Math.PI/180;
-  const x=cx+170*Math.cos(armAngle), y=cy+170*Math.sin(armAngle);
-  const status=args.hit ? "#22C55E" : "#64748B";
-  const parts=[];
-  parts.push('<rect width="900" height="390" rx="18" fill="#0D1424"/>');
-  parts.push('<circle cx="450" cy="245" r="130" fill="none" stroke="#24304A" stroke-width="10"/>');
-  parts.push('<circle cx="450" cy="245" r="24" fill="#121A2B" stroke="#94A3B8" stroke-width="4"/>');
-  parts.push('<polygon points="450,180 410,280 490,280" fill="#1B2A44" stroke="#C4B5FD" stroke-width="3"/>');
-  parts.push('<line x1="450" y1="245" x2="'+x.toFixed(1)+'" y2="'+y.toFixed(1)+'" stroke="'+status+'" stroke-width="28" stroke-linecap="round"/>');
-  parts.push('<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="48" fill="#1E293B" stroke="#94A3B8" stroke-width="16"/>');
-  parts.push('<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="20" fill="#05070D" stroke="#94A3B8" stroke-width="4"/>');
-  parts.push('<rect x="70" y="210" width="140" height="70" rx="12" fill="#334155" stroke="#94A3B8" stroke-width="4"/>');
-  parts.push('<line x1="210" y1="245" x2="390" y2="245" stroke="#E8ECF5" stroke-width="3"/>');
-  parts.push('<line x1="450" y1="245" x2="450" y2="100" stroke="#94A3B8" stroke-width="2" stroke-dasharray="8 7"/>');
-  parts.push('<text x="450" y="38" fill="#E8ECF5" font-size="20" text-anchor="middle">Telescope reading '+reading.toFixed(2)+'&#176; - '+(args.side||'Left')+' side</text>');
-  parts.push('<text x="450" y="370" fill="#A9B4CC" font-size="16" text-anchor="middle">Prism A = '+(args.prismAngle||60).toFixed(1)+'&#176;</text>');
-  svg.innerHTML=parts.join("");
+  const args=window.streamlitArgs||{};
+  const a=(reading-180)*Math.PI/180,x=(CX+170*Math.cos(a)).toFixed(1),y=(CY+170*Math.sin(a)).toFixed(1);
+  const arm=args.hit?"#34D399":"#C8A24A";
+  svg.setAttribute("aria-valuenow",reading.toFixed(2));
+  svg.innerHTML=
+   '<rect width="900" height="390" rx="14" fill="#11161C"/>'+
+   '<circle cx="450" cy="245" r="129" fill="none" stroke="#2B3541" stroke-width="8"/>'+TICKS+
+   '<polygon points="450,180 410,280 490,280" fill="#1E2A36" stroke="#9FB3C2" stroke-width="2"/>'+
+   '<circle cx="450" cy="245" r="14" fill="#1B232C" stroke="#8C99A5" stroke-width="3"/>'+
+   '<line x1="210" y1="245" x2="390" y2="245" stroke="#F4F1E8" stroke-width="3" stroke-opacity=".8"/>'+
+   '<rect x="70" y="210" width="140" height="70" rx="10" fill="#26313C" stroke="#8C99A5" stroke-width="3"/>'+
+   '<line x1="450" y1="245" x2="450" y2="100" stroke="#5E6B78" stroke-width="2" stroke-dasharray="8 7"/>'+
+   `<line x1="450" y1="245" x2="${x}" y2="${y}" stroke="${arm}" stroke-width="22" stroke-linecap="round"/>`+
+   `<circle cx="${x}" cy="${y}" r="48" fill="#1B232C" stroke="#8C99A5" stroke-width="14"/>`+
+   `<circle cx="${x}" cy="${y}" r="18" fill="#05070B" stroke="${arm}" stroke-width="4"/>`+
+   `<text x="450" y="38" fill="#F4F1E8" font-size="22" text-anchor="middle">Telescope at ${reading.toFixed(2)}°, ${args.side||"Left"} side</text>`+
+   `<text x="450" y="372" fill="#8C99A5" font-size="16" text-anchor="middle">Prism angle A = ${(args.prismAngle||60).toFixed(1)}°</text>`;
 }
 
 function pointerAngle(e){
-  const rect=svg.getBoundingClientRect();
-  const cx=rect.left+rect.width*0.5;
-  const cy=rect.top+rect.height*(245/390);
-  let angle=Math.atan2(e.clientY-cy,e.clientX-cx)*180/Math.PI+180;
-  if(angle<0)angle+=360;
-  if(angle>=360)angle-=360;
-  return angle;
+  const r=svg.getBoundingClientRect(),cx=r.left+r.width*.5,cy=r.top+r.height*(245/390);
+  let t=Math.atan2(e.clientY-cy,e.clientX-cx)*180/Math.PI+180;
+  if(t<0)t+=360; if(t>=360)t-=360; return t;
 }
+function commit(){send("streamlit:setComponentValue",{value:Number(reading.toFixed(2)),dataType:"json"})}
 
-svg.addEventListener("pointerdown",e=>{
-  dragging=true;
-  svg.setPointerCapture(e.pointerId);
-  svg.style.cursor="grabbing";
-  reading=pointerAngle(e);
-  render();
-  e.preventDefault();
-});
-svg.addEventListener("pointermove",e=>{
-  if(!dragging)return;
-  reading=pointerAngle(e);
-  render();
-});
-svg.addEventListener("pointerup",e=>{
-  if(!dragging)return;
-  dragging=false;
-  svg.style.cursor="grab";
-  reading=pointerAngle(e);
-  render();
-  send("streamlit:setComponentValue",{value:Number(reading.toFixed(2)),dataType:"json"});
-});
+svg.addEventListener("pointerdown",e=>{dragging=true;svg.setPointerCapture(e.pointerId);svg.style.cursor="grabbing";reading=pointerAngle(e);render();e.preventDefault()});
+svg.addEventListener("pointermove",e=>{if(!dragging)return;reading=pointerAngle(e);render()});
+svg.addEventListener("pointerup",e=>{if(!dragging)return;dragging=false;svg.style.cursor="grab";reading=pointerAngle(e);render();commit()});
 svg.addEventListener("pointercancel",()=>{dragging=false;svg.style.cursor="grab"});
+svg.addEventListener("keydown",e=>{
+  const d={ArrowRight:1,ArrowUp:1,ArrowLeft:-1,ArrowDown:-1}[e.key];
+  if(!d)return; e.preventDefault();
+  reading=((reading+d*(e.shiftKey?1:.1))%360+360)%360; render();
+});
+svg.addEventListener("keyup",e=>{if(e.key.startsWith("Arrow"))commit()});
 
 window.addEventListener("message",e=>{
-  if(!e.data || e.data.type!=="streamlit:render")return;
-  window.streamlitArgs=e.data.args || {};
-  if(!dragging){
-    const value=Number(window.streamlitArgs.reading);
-    if(Number.isFinite(value)){reading=value;render();}
-  }
+  if(!e.data||e.data.type!=="streamlit:render")return;
+  window.streamlitArgs=e.data.args||{};
+  if(!dragging){const v=Number(window.streamlitArgs.reading);if(Number.isFinite(v)){reading=v;render()}}
 });
-
 send("streamlit:componentReady",{apiVersion:1});
 send("streamlit:setFrameHeight",{height:390});
 render();

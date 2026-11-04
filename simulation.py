@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 import physics as P
+import ui
 
 DIAL_COMPONENT = components.declare_component(
     "prism_dial",
@@ -110,7 +111,6 @@ def render(ss, add_obs, add_simulation_readings=None):
     ss.sim_line = selected_line
     line_deviation = 0.0 if selected_line == "UDR" else dev[selected_line][1]
     selected_color = "#5EEAD4" if selected_line == "UDR" else P.COLOUR[selected_line]
-    st.markdown("---")
     dial_col, eye_col = st.columns([2.0, 1.0])
     reading = float(ss.sim_reading)
     ss.sim_reading = reading
@@ -127,17 +127,7 @@ def render(ss, add_obs, add_simulation_readings=None):
     hit = P.angle_diff(reading, expected) <= 0.15
 
     with dial_col:
-        st.markdown(
-            f"<div style='margin:0 0 .75rem;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem'>"
-            f"<div style='padding:.75rem 1rem;border:2px solid #5EEAD4;border-radius:14px;background:#12323A'>"
-            f"<div style='color:#9AF3E5;font-size:.78rem;font-weight:700'>VERNIER V1</div>"
-            f"<div style='font-size:1.55rem;font-weight:700;color:#FFFFFF'>{v1_reading:.2f}°</div></div>"
-            f"<div style='padding:.75rem 1rem;border:2px solid #38BDF8;border-radius:14px;background:#102A40'>"
-            f"<div style='color:#BAE6FD;font-size:.78rem;font-weight:700'>VERNIER V2</div>"
-            f"<div style='font-size:1.55rem;font-weight:700;color:#FFFFFF'>{v2_reading:.2f}°</div></div>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
+        ui.vernier_readouts(v1_reading, v2_reading)
         ss.setdefault("sim_dial_component_value", reading)
         dial_value = DIAL_COMPONENT(
             reading=reading,
@@ -160,15 +150,7 @@ def render(ss, add_obs, add_simulation_readings=None):
         eyepiece_offset = ((reading - expected) * 35)
         if abs(eyepiece_offset) > 140:
             eyepiece_offset = 140 if eyepiece_offset > 0 else -140
-        st.markdown(
-            f'<svg viewBox="0 0 500 180" width="100%"><rect width="500" height="180" rx="12" fill="#05070D"/>'
-            f'<line x1="250" y1="10" x2="250" y2="170" stroke="#CBD5E1" stroke-width="1"/>'
-            f'<line x1="100" y1="90" x2="400" y2="90" stroke="#CBD5E1" stroke-width="1"/>'
-            f'<line x1="{250 + eyepiece_offset:.1f}" y1="20" x2="{250 + eyepiece_offset:.1f}" y2="160" '
-            f'stroke="{selected_color}" stroke-width="6"/>'
-            '</svg>',
-            unsafe_allow_html=True,
-        )
+        ui.eyepiece(eyepiece_offset, selected_color)
         if hit:
             st.success("Spectral line aligned with the cross-wire.")
         else:
