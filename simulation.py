@@ -80,8 +80,9 @@ def render(ss, add_obs, add_simulation_readings=None):
         ss.sim_direct = 180.0
         ss.sim_reading = 180.0
         ss.sim_line = "Green"
-        ss.sim_dial_component_value = 180.0
+        ss.sim_dial_ack = 0
         ss.sim_initialized = True
+    ss.setdefault("sim_dial_ack", 0)
     if ss.sim_line not in P.LINE_NAMES:
         ss.sim_line = "Green"
 
@@ -92,14 +93,10 @@ def render(ss, add_obs, add_simulation_readings=None):
     c1, c2 = st.columns(2)
     if c1.button("Record direct ray", type="primary"):
         ss.direct = direct
-        ss.sim_dial_ignore_value = float(ss.sim_reading)
         ss.sim_reading = direct
-        ss.sim_dial_component_value = direct
         st.success(f"Direct reading recorded: {direct:.2f}°")
     if c2.button("Reset telescope"):
-        ss.sim_dial_ignore_value = float(ss.sim_reading)
         ss.sim_reading = direct
-        ss.sim_dial_component_value = direct
         st.rerun()
 
     sim_line_options = ["UDR"] + P.LINE_NAMES
@@ -111,9 +108,7 @@ def render(ss, add_obs, add_simulation_readings=None):
     ss.sim_line = selected_line
     line_deviation = 0.0 if selected_line == "UDR" else dev[selected_line][1]
     selected_color = "#5EEAD4" if selected_line == "UDR" else P.COLOUR[selected_line]
-    dial_col, eye_col = st.columns([2.0, 1.0])
     reading = float(ss.sim_reading)
-    ss.sim_reading = reading
     side = "Right" if reading <= 180.0 else "Left"
     ss.sim_side = side
     v1_reading = (reading + 90.0) % 360
@@ -126,35 +121,28 @@ def render(ss, add_obs, add_simulation_readings=None):
     expected %= 360
     hit = P.angle_diff(reading, expected) <= 0.15
 
-    with dial_col:
-        ui.vernier_readouts(v1_reading, v2_reading)
-        ss.setdefault("sim_dial_component_value", reading)
-        dial_value = DIAL_COMPONENT(
-            reading=reading,
-            side=side,
-            lineAngle=line_deviation,
-            prismAngle=cfg["A"],
-            color=selected_color,
-            hit=hit,
-            key=f"prism_dial_component_{side.lower()}_{int(round(reading * 100)):08d}",
-            default=reading,
-        )
-        if isinstance(dial_value, (int, float)):
-            dial_value = float(dial_value) % 360
-            if abs(dial_value - reading) >= 0.0001:
-                ss.sim_dial_component_value = dial_value
-                ss.sim_reading = dial_value
-                st.rerun()
-        st.caption("Rotate the red arm with your mouse or finger.")
-    with eye_col:
-        eyepiece_offset = ((reading - expected) * 35)
-        if abs(eyepiece_offset) > 140:
-            eyepiece_offset = 140 if eyepiece_offset > 0 else -140
-        ui.eyepiece(eyepiece_offset, selected_color)
-        if hit:
-            st.success("Spectral line aligned with the cross-wire.")
-        else:
-            st.warning(f"Align on the cross-wire. Target reading: {expected:.2f}°")
+    # The dial, vernier readouts and eyepiece cross-wire all live in ONE client-side
+    # component, so they move together while the arm is dragged. Python is told only
+    # once, when the user lets go. The key is constant so the iframe is never rebuilt.
+    dial_value = DIAL_COMPONENT(
+        reading=reading,
+        direct=float(direct),
+        lineDeviation=float(line_deviation),
+        isUdr=selected_line == "UDR",
+        prismAngle=cfg["A"],
+        color=selected_color,
+        ack=int(ss.sim_dial_ack),
+        key="prism_dial",
+        default=None,
+    )
+    if isinstance(dial_value, dict):
+        nonce = int(dial_value.get("n", 0))
+        if nonce > ss.sim_dial_ack:          # a new release from the user, not a stale value
+            ss.sim_dial_ack = nonce
+            new_reading = float(dial_value["v"]) % 360
+            if P.angle_diff(new_reading, reading) >= 0.0001:
+                ss.sim_reading = new_reading
+            st.rerun()
 
     b1, b2, b3, b4 = st.columns(4)
     for col, label, delta in (
@@ -162,10 +150,7 @@ def render(ss, add_obs, add_simulation_readings=None):
         (b3, "+0.01°", 0.01), (b4, "+1°", 1.0),
     ):
         if col.button(label, use_container_width=True):
-            new_reading = (reading + delta) % 360
-            ss.sim_reading = new_reading
-            ss.sim_dial_component_value = new_reading
-            ss.sim_dial_ignore_value = reading
+            ss.sim_reading = (reading + delta) % 360
             st.rerun()
 
     if st.button("Record both vernier readings", type="primary", disabled=not hit):

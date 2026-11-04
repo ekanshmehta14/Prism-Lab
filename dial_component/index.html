@@ -1,69 +1,183 @@
 <!doctype html>
 <html>
-<body style="margin:0;background:#11161C;overflow:hidden;touch-action:none;user-select:none">
-<style>#dial:focus-visible{outline:2px solid #D9A441;outline-offset:-4px}</style>
-<svg id="dial" viewBox="0 0 900 390" tabindex="0" role="slider" aria-label="Telescope angle in degrees. Arrow keys turn it by 0.1 degree, Shift for 1 degree."
- style="width:100%;height:390px;cursor:grab;touch-action:none;font-family:system-ui,-apple-system,'Segoe UI',sans-serif"></svg>
+<head>
+<meta charset="utf-8">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap');
+html,body{margin:0;background:transparent;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;
+  font-family:'Hanken Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif}
+#root{display:grid;grid-template-columns:2fr 1fr;gap:1rem;align-items:start;padding:2px}
+@media(max-width:640px){#root{grid-template-columns:1fr}}
+.vern{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem}
+.vern>div{background:#11161C;border-radius:8px;padding:.7rem 1rem;border-left:3px solid #D9A441}
+.vern .k{color:#C8B07A;font-size:.82rem;font-weight:600}
+.vern .v{font-family:'Newsreader',Georgia,serif;font-size:1.9rem;color:#F4F1E8;font-variant-numeric:tabular-nums}
+#dial{display:block;width:100%;height:auto;cursor:grab;touch-action:none;border-radius:14px}
+#dial:focus-visible{outline:2px solid #D9A441;outline-offset:-4px}
+#eye{display:block;width:100%;height:auto}
+.cap{font-size:.85rem;color:#566673;margin-top:.4rem}
+#status{border-radius:8px;padding:.75rem 1rem;font-size:.95rem;line-height:1.45;margin-top:.5rem;transition:background .12s,color .12s}
+#status.ok{background:#DDF3E4;color:#14532D}
+#status.no{background:#FFF1CC;color:#6B4A00}
+</style>
+</head>
+<body>
+<div id="root">
+  <div>
+    <div class="vern">
+      <div><div class="k">Vernier V1</div><div class="v" id="v1">0.00°</div></div>
+      <div><div class="k">Vernier V2</div><div class="v" id="v2">0.00°</div></div>
+    </div>
+    <svg id="dial" viewBox="0 0 900 390" tabindex="0" role="slider" aria-valuemin="0" aria-valuemax="360"
+         aria-label="Telescope angle in degrees. Arrow keys turn it by 0.1 degree, Shift for 1 degree."></svg>
+    <div class="cap">Drag the telescope arm with your mouse or finger. The cross-wire view updates as you move.</div>
+  </div>
+  <div>
+    <svg id="eye" viewBox="0 0 300 220" role="img" aria-label="Eyepiece view of the spectral line against the cross-wire"></svg>
+    <div id="status" class="no"></div>
+  </div>
+</div>
 <script>
-const svg=document.getElementById("dial"),CX=450,CY=245;
-let reading=180,dragging=false;
+const CX = 450, CY = 245, TOL = 0.15;
+const dial = document.getElementById("dial");
+const eye = document.getElementById("eye");
+const $ = id => document.getElementById(id);
 
-function send(type,data){window.parent.postMessage({isStreamlitMessage:true,type,...data},"*")}
+// State pushed from Python (see simulation.py) and local live state.
+const A = {direct: 180, dev: 0, udr: false, color: "#22C55E", prism: 60, ack: 0};
+let reading = 180, dragging = false, sentN = 0, raf = 0;
 
-const TICKS=(()=>{let s="";
-  for(let r=0;r<360;r+=5){
-    const a=(r-180)*Math.PI/180,M=r%30===0,r1=M?108:116,r2=124;
-    s+=`<line x1="${(CX+r1*Math.cos(a)).toFixed(1)}" y1="${(CY+r1*Math.sin(a)).toFixed(1)}" x2="${(CX+r2*Math.cos(a)).toFixed(1)}" y2="${(CY+r2*Math.sin(a)).toFixed(1)}" stroke="${M?"#C8B07A":"#5E6B78"}" stroke-width="${M?2.5:1.2}"/>`;
-    if(M)s+=`<text x="${(CX+92*Math.cos(a)).toFixed(1)}" y="${(CY+92*Math.sin(a)+4).toFixed(1)}" fill="#8C99A5" font-size="12" text-anchor="middle">${r}</text>`;
+function send(type, data) { window.parent.postMessage({isStreamlitMessage: true, type, ...data}, "*"); }
+const norm = v => ((v % 360) + 360) % 360;
+const q2 = v => norm(Math.round(v * 100) / 100);          // quantise to 0.01 deg, same as Python
+const sdiff = (a, b) => ((a - b + 540) % 360) - 180;       // signed shortest difference
+
+/* ---------- build static SVGs once; only attributes change while moving ---------- */
+(function buildDial() {
+  let ticks = "";
+  for (let r = 0; r < 360; r += 5) {
+    const a = (r - 180) * Math.PI / 180, M = r % 30 === 0, r1 = M ? 108 : 116, r2 = 124;
+    ticks += `<line x1="${(CX + r1 * Math.cos(a)).toFixed(1)}" y1="${(CY + r1 * Math.sin(a)).toFixed(1)}" x2="${(CX + r2 * Math.cos(a)).toFixed(1)}" y2="${(CY + r2 * Math.sin(a)).toFixed(1)}" stroke="${M ? "#C8B07A" : "#5E6B78"}" stroke-width="${M ? 2.5 : 1.2}"/>`;
+    if (M) ticks += `<text x="${(CX + 92 * Math.cos(a)).toFixed(1)}" y="${(CY + 92 * Math.sin(a) + 4).toFixed(1)}" fill="#8C99A5" font-size="12" text-anchor="middle">${r}</text>`;
   }
-  return s})();
+  dial.innerHTML =
+    '<rect width="900" height="390" rx="14" fill="#11161C"/>' +
+    '<circle cx="450" cy="245" r="129" fill="none" stroke="#2B3541" stroke-width="8"/>' + ticks +
+    '<polygon points="450,180 410,280 490,280" fill="#1E2A36" stroke="#9FB3C2" stroke-width="2"/>' +
+    '<circle cx="450" cy="245" r="14" fill="#1B232C" stroke="#8C99A5" stroke-width="3"/>' +
+    '<line x1="210" y1="245" x2="390" y2="245" stroke="#F4F1E8" stroke-width="3" stroke-opacity=".8"/>' +
+    '<rect x="70" y="210" width="140" height="70" rx="10" fill="#26313C" stroke="#8C99A5" stroke-width="3"/>' +
+    '<line x1="450" y1="245" x2="450" y2="100" stroke="#5E6B78" stroke-width="2" stroke-dasharray="8 7"/>' +
+    '<g id="armg" transform="rotate(0 450 245)">' +
+      '<line id="armline" x1="450" y1="245" x2="620" y2="245" stroke="#C8A24A" stroke-width="22" stroke-linecap="round"/>' +
+      '<circle cx="620" cy="245" r="48" fill="#1B232C" stroke="#8C99A5" stroke-width="14"/>' +
+      '<circle id="armeye" cx="620" cy="245" r="18" fill="#05070B" stroke="#C8A24A" stroke-width="4"/>' +
+    '</g>' +
+    '<text id="title" x="450" y="38" fill="#F4F1E8" font-size="22" text-anchor="middle"></text>' +
+    '<text id="ptext" x="24" y="374" fill="#8C99A5" font-size="16" text-anchor="start"></text>';
 
-function render(){
-  const args=window.streamlitArgs||{};
-  const a=(reading-180)*Math.PI/180,x=(CX+170*Math.cos(a)).toFixed(1),y=(CY+170*Math.sin(a)).toFixed(1);
-  const arm=args.hit?"#34D399":"#C8A24A";
-  svg.setAttribute("aria-valuenow",reading.toFixed(2));
-  svg.innerHTML=
-   '<rect width="900" height="390" rx="14" fill="#11161C"/>'+
-   '<circle cx="450" cy="245" r="129" fill="none" stroke="#2B3541" stroke-width="8"/>'+TICKS+
-   '<polygon points="450,180 410,280 490,280" fill="#1E2A36" stroke="#9FB3C2" stroke-width="2"/>'+
-   '<circle cx="450" cy="245" r="14" fill="#1B232C" stroke="#8C99A5" stroke-width="3"/>'+
-   '<line x1="210" y1="245" x2="390" y2="245" stroke="#F4F1E8" stroke-width="3" stroke-opacity=".8"/>'+
-   '<rect x="70" y="210" width="140" height="70" rx="10" fill="#26313C" stroke="#8C99A5" stroke-width="3"/>'+
-   '<line x1="450" y1="245" x2="450" y2="100" stroke="#5E6B78" stroke-width="2" stroke-dasharray="8 7"/>'+
-   `<line x1="450" y1="245" x2="${x}" y2="${y}" stroke="${arm}" stroke-width="22" stroke-linecap="round"/>`+
-   `<circle cx="${x}" cy="${y}" r="48" fill="#1B232C" stroke="#8C99A5" stroke-width="14"/>`+
-   `<circle cx="${x}" cy="${y}" r="18" fill="#05070B" stroke="${arm}" stroke-width="4"/>`+
-   `<text x="450" y="38" fill="#F4F1E8" font-size="22" text-anchor="middle">Telescope at ${reading.toFixed(2)}°, ${args.side||"Left"} side</text>`+
-   `<text x="450" y="372" fill="#8C99A5" font-size="16" text-anchor="middle">Prism angle A = ${(args.prismAngle||60).toFixed(1)}°</text>`;
+  eye.innerHTML =
+    '<defs><clipPath id="fov"><circle cx="150" cy="110" r="100"/></clipPath><filter id="glow"><feGaussianBlur stdDeviation="3"/></filter></defs>' +
+    '<circle cx="150" cy="110" r="104" fill="#05070B" stroke="#3A4651" stroke-width="6"/>' +
+    '<g clip-path="url(#fov)">' +
+      '<g id="specg" transform="translate(0 0)">' +
+        '<line id="glowline" x1="150" y1="0" x2="150" y2="220" stroke="#22C55E" stroke-width="10" opacity=".55" filter="url(#glow)"/>' +
+        '<line id="specline" x1="150" y1="0" x2="150" y2="220" stroke="#22C55E" stroke-width="3"/>' +
+      '</g>' +
+      '<line x1="150" y1="0" x2="150" y2="220" stroke="#DDE4EA" stroke-width="1"/>' +
+      '<line x1="0" y1="110" x2="300" y2="110" stroke="#DDE4EA" stroke-width="1"/>' +
+    '</g>';
+})();
+
+const el = {
+  armg: $("armg"), armline: $("armline"), armeye: $("armeye"), title: $("title"), ptext: $("ptext"),
+  specg: $("specg"), glow: $("glowline"), spec: $("specline"),
+  v1: $("v1"), v2: $("v2"), status: $("status"),
+};
+
+/* ---------- single place that redraws everything from `reading` ---------- */
+function update() {
+  raf = 0;
+  const side = reading <= 180 ? "Right" : "Left";
+  let expected = A.udr ? (side === "Right" ? A.direct : A.direct + 180)
+                       : (side === "Right" ? A.direct - A.dev : A.direct + A.dev);
+  expected = norm(expected);
+  const diff = sdiff(reading, expected);
+  const hit = Math.abs(diff) <= TOL;
+  const arm = hit ? "#34D399" : "#C8A24A";
+
+  el.armg.setAttribute("transform", `rotate(${(reading - 180).toFixed(3)} ${CX} ${CY})`);
+  el.armline.setAttribute("stroke", arm);
+  el.armeye.setAttribute("stroke", arm);
+  el.title.textContent = `Telescope at ${reading.toFixed(2)}°, ${side} side`;
+  el.ptext.textContent = `Prism angle A = ${Number(A.prism).toFixed(1)}°`;
+  dial.setAttribute("aria-valuenow", reading.toFixed(2));
+
+  const dx = Math.max(-84, Math.min(84, diff * 21));        // line offset inside the eyepiece
+  el.specg.setAttribute("transform", `translate(${dx.toFixed(2)} 0)`);
+  el.glow.setAttribute("stroke", A.color);
+  el.spec.setAttribute("stroke", A.color);
+
+  el.v1.textContent = norm(reading + 90).toFixed(2) + "°";
+  el.v2.textContent = norm(reading - 90).toFixed(2) + "°";
+
+  el.status.className = hit ? "ok" : "no";
+  el.status.textContent = hit ? "Spectral line aligned with the cross-wire."
+                              : `Align on the cross-wire. Target reading: ${expected.toFixed(2)}°`;
+}
+function schedule() { if (!raf) raf = requestAnimationFrame(update); }
+
+/* ---------- interaction ---------- */
+function pointerAngle(e) {
+  // Exact pivot position on screen, valid at any iframe width.
+  const m = dial.getScreenCTM();
+  const cx = m.a * CX + m.c * CY + m.e, cy = m.b * CX + m.d * CY + m.f;
+  return q2(Math.atan2(e.clientY - cy, e.clientX - cx) * 180 / Math.PI + 180);
+}
+function commit() {
+  sentN = Math.max(Date.now(), sentN + 1);
+  send("streamlit:setComponentValue", {value: {v: reading, n: sentN}, dataType: "json"});
 }
 
-function pointerAngle(e){
-  const r=svg.getBoundingClientRect(),cx=r.left+r.width*.5,cy=r.top+r.height*(245/390);
-  let t=Math.atan2(e.clientY-cy,e.clientX-cx)*180/Math.PI+180;
-  if(t<0)t+=360; if(t>=360)t-=360; return t;
-}
-function commit(){send("streamlit:setComponentValue",{value:Number(reading.toFixed(2)),dataType:"json"})}
-
-svg.addEventListener("pointerdown",e=>{dragging=true;svg.setPointerCapture(e.pointerId);svg.style.cursor="grabbing";reading=pointerAngle(e);render();e.preventDefault()});
-svg.addEventListener("pointermove",e=>{if(!dragging)return;reading=pointerAngle(e);render()});
-svg.addEventListener("pointerup",e=>{if(!dragging)return;dragging=false;svg.style.cursor="grab";reading=pointerAngle(e);render();commit()});
-svg.addEventListener("pointercancel",()=>{dragging=false;svg.style.cursor="grab"});
-svg.addEventListener("keydown",e=>{
-  const d={ArrowRight:1,ArrowUp:1,ArrowLeft:-1,ArrowDown:-1}[e.key];
-  if(!d)return; e.preventDefault();
-  reading=((reading+d*(e.shiftKey?1:.1))%360+360)%360; render();
+dial.addEventListener("pointerdown", e => {
+  dragging = true; dial.setPointerCapture(e.pointerId); dial.style.cursor = "grabbing";
+  reading = pointerAngle(e); schedule(); e.preventDefault();
 });
-svg.addEventListener("keyup",e=>{if(e.key.startsWith("Arrow"))commit()});
-
-window.addEventListener("message",e=>{
-  if(!e.data||e.data.type!=="streamlit:render")return;
-  window.streamlitArgs=e.data.args||{};
-  if(!dragging){const v=Number(window.streamlitArgs.reading);if(Number.isFinite(v)){reading=v;render()}}
+dial.addEventListener("pointermove", e => { if (dragging) { reading = pointerAngle(e); schedule(); } });
+dial.addEventListener("pointerup", e => {
+  if (!dragging) return;
+  dragging = false; dial.style.cursor = "grab";
+  reading = pointerAngle(e); update(); commit();     // tell Python only once, on release
 });
-send("streamlit:componentReady",{apiVersion:1});
-send("streamlit:setFrameHeight",{height:390});
-render();
+dial.addEventListener("pointercancel", () => { dragging = false; dial.style.cursor = "grab"; });
+dial.addEventListener("keydown", e => {
+  const d = {ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1}[e.key];
+  if (!d) return; e.preventDefault();
+  reading = q2(reading + d * (e.shiftKey ? 1 : 0.1)); schedule();
+});
+dial.addEventListener("keyup", e => { if (e.key.startsWith("Arrow")) commit(); });
+
+/* ---------- Streamlit plumbing ---------- */
+window.addEventListener("message", e => {
+  if (!e.data || e.data.type !== "streamlit:render") return;
+  const a = e.data.args || {};
+  A.direct = Number(a.direct); if (!Number.isFinite(A.direct)) A.direct = 180;
+  A.dev = Number(a.lineDeviation) || 0;
+  A.udr = !!a.isUdr;
+  A.color = a.color || "#22C55E";
+  A.prism = Number(a.prismAngle) || 60;
+  A.ack = Number(a.ack) || 0;
+  const v = Number(a.reading);
+  // Take the server's angle only when the user is not dragging and Python has
+  // already processed everything this dial sent (stops stale reruns snapping it back).
+  if (!dragging && Number.isFinite(v) && A.ack >= sentN) reading = v;
+  schedule();
+});
+
+function fitFrame() { send("streamlit:setFrameHeight", {height: Math.ceil($("root").getBoundingClientRect().height) + 6}); }
+new ResizeObserver(fitFrame).observe($("root"));
+send("streamlit:componentReady", {apiVersion: 1});
+update(); fitFrame();
 </script>
 </body>
 </html>
